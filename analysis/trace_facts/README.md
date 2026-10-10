@@ -2,7 +2,7 @@
 
 ## Purpose
 
-These scripts perform exploratory workload analysis for the agent KV-cache retention project using the TraceLab dataset.
+These scripts perform exploratory workload analysis for the agent KV-cache retention project using the TraceLab dataset. The link to the dataset can be found here: https://github.com/uw-syfi/TraceLab.
 
 ## Scripts
 
