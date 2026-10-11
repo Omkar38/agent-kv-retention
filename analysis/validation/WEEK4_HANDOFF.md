@@ -1,4 +1,4 @@
-# Week 4 handoff — Brian's pauses + Hangting's validation
+# Week 4 handoff
 
 **Purpose:** Produce a defensible, **quality-labeled inter-round pause-duration proxy** for Week 4 without overwriting Brian's original `pauses.parquet`.
 
