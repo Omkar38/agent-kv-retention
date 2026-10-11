@@ -501,12 +501,108 @@ def build_agent_wait_candidates():
     con.close()
 
 
+
+def classify_agent_wait_candidates():
+    """Separate independent retrospective evidence dimensions without dropping rows.
+
+    Output is a descriptive *tool-wait proxy* dataset, never ground-truth GPU
+    KV-cache idleness. Future events and flags are labels/diagnostics, not
+    contemporaneous predictors.
+    """
+    import duckdb
+
+    src = "group_work/agent_wait_candidates.parquet"
+    out = "group_work/agent_waits_classified.parquet"
+    con = duckdb.connect()
+
+    sql = """
+    WITH flags AS (
+        SELECT *,
+            CASE
+                WHEN observed_n_calls = 1 THEN 'single_tool'
+                ELSE 'multiple_tools'
+            END AS tool_topology,
+            CASE
+                WHEN generation_events_inside > 0 AND user_messages_inside > 0
+                    THEN 'generation_and_user_inside'
+                WHEN generation_events_inside > 0
+                    THEN 'generation_during_tool'
+                WHEN user_messages_inside > 0
+                    THEN 'user_during_tool'
+                WHEN user_before_next_generation IS TRUE
+                    THEN 'user_before_next_generation'
+                ELSE 'no_interruption_observed'
+            END AS interaction_class,
+            CASE
+                WHEN next_generation_signal_ts IS NULL
+                    THEN 'no_next_generation'
+                WHEN post_tool_resume_signal_offset_s < 0
+                    THEN 'negative_alignment'
+                WHEN post_tool_resume_signal_offset_s <= 10
+                    THEN 'generation_signal_within_10s'
+                WHEN post_tool_resume_signal_offset_s <= 60
+                    THEN 'generation_signal_10_to_60s'
+                WHEN post_tool_resume_signal_offset_s <= 3600
+                    THEN 'generation_signal_1m_to_1h'
+                ELSE 'generation_signal_after_1h'
+            END AS continuation_band
+        FROM read_parquet('group_work/agent_wait_candidates.parquet')
+    )
+    SELECT *,
+        (
+            tool_topology = 'single_tool'
+            AND interaction_class = 'no_interruption_observed'
+            AND continuation_band IN (
+                'generation_signal_within_10s',
+                'generation_signal_10_to_60s'
+            )
+        ) AS low_ambiguity_tool_proxy,
+        'tool_activity_not_measured_gpu_cache_idleness'
+            AS observation_level
+    FROM flags
+    """
+    con.execute("COPY (" + sql + ") TO '" + out + "' (FORMAT PARQUET)")
+    print(f"Saved retrospectively classified tool episodes: {out}")
+
+    for heading, field in (
+        ("Tool topology", "tool_topology"),
+        ("Observed interaction", "interaction_class"),
+        ("Continuation signal lag", "continuation_band"),
+    ):
+        q = f"""
+            SELECT provider, {field}, COUNT(*) AS episodes
+            FROM read_parquet(?)
+            GROUP BY provider, {field}
+            ORDER BY provider, episodes DESC
+        """
+        df = con.execute(q, [out]).df()
+        print(f"\n=== {heading} ===")
+        print(df.to_string(index=False))
+
+    summary = con.execute("""
+        SELECT provider,
+               COUNT(*) AS all_episodes,
+               COUNT(*) FILTER (WHERE low_ambiguity_tool_proxy)
+                   AS low_ambiguity_proxies,
+               COUNT(*) FILTER (WHERE NOT low_ambiguity_tool_proxy)
+                   AS other_or_ambiguous,
+               COUNT(DISTINCT session_id || ':' || CAST(episode_id AS VARCHAR))
+                   AS distinct_session_episode_keys
+        FROM read_parquet(?)
+        GROUP BY provider ORDER BY provider
+    """, [out]).df()
+    print("\n=== Candidate quality summary ===")
+    print(summary.to_string(index=False))
+    con.close()
+
+
 STEPS = [
     ("intervals", extract_tool_intervals),
     ("episodes", group_tool_episodes),
     ("candidates", construct_candidates),
     ("audit", audit_candidates),
     ("wait_candidates", build_agent_wait_candidates),
+    ("classify", classify_agent_wait_candidates),
 ]
 
 def main():
