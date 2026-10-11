@@ -1,6 +1,6 @@
 # Week 3 — TraceLab Processing, Workload Analysis, and Data Validation
 
-**Project:** Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents  
+**Project:** Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents
 **Scope:** The `Hangting_week3` branch includes round-gap characterization, tool latency analysis, interval extraction, overlap-aware tool-activity episodes, data-quality checks, and a handoff for learning-augmented retention research.
 
 The practical entry points for this branch are `week3/`, `analysis/trace_facts/`, and `analysis/hangting_week3/`. This README explains their combined purpose, inputs, usage, and interpretation. [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md) contains the observed counts and anomaly investigations.
