@@ -8,7 +8,7 @@ How should an LLM serving system spend its GPU memory across many concurrent age
 
 ## Week 3 analysis — start here
 
-For the complete branch-wide script guide, purpose, data provenance, execution commands, dataset feature/label rules, and the Weeks 4–10 handoff, see **[Week 3 README](analysis/validation/README.md)**. The [Week 3 validation report](analysis/validation/WEEK3_VALIDATION.md) records reproduced statistics and the Codex round-attribution issue. The branch combines `week3/` round-gap plots, `analysis/trace_facts/` latency reports, and `analysis/validation/` overlap-aware candidate extraction plus QA.
+For the complete branch-wide script guide, purpose, data provenance, execution commands, dataset feature/label rules, and the Weeks 4–10 handoff, see **[Week 3 README](analysis/validation/README.md)**. The [Week 3 validation report](analysis/validation/WEEK3_VALIDATION.md) records reproduced statistics and the Codex round-attribution issue. The branch contains `analysis/trace_facts/` latency reports and `analysis/validation/` overlap-aware candidate extraction plus QA. Brian's [original Week 3 analysis](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3) is linked rather than duplicated.
 
 ---
 
@@ -89,10 +89,9 @@ Seven policies as interchangeable functions over identical traces:
 
 ```
 agent-kv-retention/
-├── docs/
-│   ├── proposal.md           # submitted proposal
-│   ├── related-work.md       # per-paper: what it does / assumes / leaves open
-│   └── meeting-notes.md
+├── analysis/
+│   ├── trace_facts/          # tool latency and session summaries
+│   └── validation/           # tool-activity dataset, audits, handoff
 ├── src/
 │   ├── sim/                  # discrete-event simulator
 │   ├── policies/             # the seven retention policies
