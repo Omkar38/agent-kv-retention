@@ -53,7 +53,12 @@ Brian's original branch contains [`data/pauses.parquet`](https://github.com/Omka
 - The original derived round-gap dataset and figures are *preserved* rather than rewritten after the Codex attribution audit. Reproduced counts describe that original extraction, not a corrected KV-retention ground truth.
 - All measurements in the validation report were obtained from the group's local copy of the released DuckDB file on **October 11, 2026**. Parquet outputs generated locally are not required to be committed to source control. Record the release/version and any preprocessing changes in subsequent experiments.
 
-## 4. Reproduce on macOS / Linux
+## 4. Reproducibility and execution
+
+Use the [TraceLab coding-agent trace](https://github.com/uw-syfi/TraceLab) release v0.0.1 (`syfi_coding_trace.duckdb`) and the `Hangting_week3` checkout of this repository. All analysis scripts expect paths relative to the **TraceLab root**, so the current working directory matters. The original round-gap scripts are referenced from [Brian's branch](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3); they are not duplicated on `Hangting_week3`.
+
+Dependencies: Python 3.10+, `duckdb`, `pandas`, `numpy`, `matplotlib`, and Git. On Windows, use **PowerShell**, not Bash, for Section 4.2.
+### 4.1. Reproduce on macOS / Linux
 
 Requirements: Python 3.10+, `duckdb`, `pandas` and `matplotlib` (plus `numpy` for the existing figures). Use TraceLab's own environment if preferred. Download/prepare its v0.0.1 DuckDB release before running the analysis. Do not replace this database with unverified synthetic records.
 
@@ -102,6 +107,7 @@ git -C "$REPO" show origin/Brian:week3/data/pauses.parquet > group_work/pauses.p
 ```
 
 These historical inter-round records have known Codex attribution limitations; they are not a ground-truth KV-idle dataset. The original plots use illustrative cost assumptions.
+
 **B. Build the tool-activity datasets (main pipeline):**
 
 ```bash
@@ -129,6 +135,88 @@ python "$REPO/analysis/trace_facts/check_prediction_fields.py"
 ```
 
 Because these are exploratory scripts, outputs are printed directly to the terminal. The figures from step A are stored in `our_work/`. For a reproducibility check, compare counts with [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md), not just whether a script exits successfully.
+
+
+### 4.2. Reproduce on Windows (PowerShell)
+
+**A. Set up the paths and Python environment.** The example assumes two sibling directories under your Windows home folder. If starting from scratch, clone [TraceLab](https://github.com/uw-syfi/TraceLab) into `TraceLab` and this repository at branch `Hangting_week3` into `agent-kv-retention-hangting`. Adjust `$ROOT` if you use a different location.
+
+```powershell
+$ROOT = Join-Path $HOME 'kv-week3-work'
+$TRACE = Join-Path $ROOT 'TraceLab'
+$REPO = Join-Path $ROOT 'agent-kv-retention-hangting'
+Set-Location $TRACE
+
+New-Item -ItemType Directory -Force -Path 'trace', 'group_work', 'our_work' | Out-Null
+
+# Use TraceLab's local virtual environment when available.
+$VENV_PY = Join-Path $TRACE '.venv\Scripts\python.exe'
+if (Test-Path $VENV_PY) { $PY = $VENV_PY } else { $PY = 'python' }
+& $PY -m pip install duckdb pandas numpy matplotlib
+```
+
+Ensure `trace\syfi_coding_trace.duckdb` exists. If it has not been downloaded, retrieve the [TraceLab v0.0.1 release](https://github.com/uw-syfi/TraceLab/releases/tag/v0.0.1):
+
+```powershell
+Invoke-WebRequest -Uri 'https://github.com/uw-syfi/TraceLab/releases/download/v0.0.1/syfi_coding_trace.duckdb' `
+  -OutFile 'trace\syfi_coding_trace.duckdb'
+```
+
+**B. Obtain Brian's original round-gap materials (optional, for comparison).** His source files remain in the [`Brian` branch](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3). The following **binary-safe** `git archive` method retrieves scripts and the original Parquet file without switching branches. Do not use `git show ... > pauses.parquet` in Windows PowerShell 5.1, because its text redirection can corrupt binary output.
+
+```powershell
+git -C $REPO fetch origin Brian
+$ZIP = Join-Path (Get-Location) 'group_work\brian_week3.zip'
+git -C $REPO archive --format=zip --output="$ZIP" origin/Brian `
+  week3/build_pause_table.py `
+  week3/plot_pause_cdf.py `
+  week3/plot_pause_by_tool.py `
+  week3/plot_context_size.py `
+  week3/data/pauses.parquet
+if ($LASTEXITCODE -ne 0) { throw 'Could not export Brian branch artifacts.' }
+
+Expand-Archive -LiteralPath $ZIP -DestinationPath 'group_work\brian_branch' -Force
+Copy-Item 'group_work\brian_branch\week3\*.py' 'our_work\'
+Copy-Item 'group_work\brian_branch\week3\data\pauses.parquet' 'group_work\pauses.parquet'
+```
+
+To regenerate Brian's round-gap dataset and figures from the downloaded DuckDB instead of reusing the archived Parquet file:
+
+```powershell
+& $PY 'our_work\build_pause_table.py'
+& $PY 'our_work\plot_pause_cdf.py'
+& $PY 'our_work\plot_pause_by_tool.py'
+& $PY 'our_work\plot_context_size.py'
+Copy-Item 'our_work\pauses.parquet' 'group_work\pauses.parquet' -Force
+```
+
+**C. Build the overlap-aware tool-activity dataset.** This runs all four extraction stages and writes Parquet outputs to `group_work\`:
+
+```powershell
+& $PY (Join-Path $REPO 'analysis\validation\build_tool_dataset.py')
+```
+
+To rerun only one completed stage, append `--step intervals`, `--step episodes`, `--step candidates`, or `--step audit`, ensuring the earlier stage outputs exist.
+
+**D. Run validation and anomaly inspection:**
+
+```powershell
+& $PY (Join-Path $REPO 'analysis\validation\validate_week3.py')
+& $PY (Join-Path $REPO 'analysis\validation\inspect_cases.py') --case codex
+```
+
+The original pause-table attribution check requires `group_work\pauses.parquet`; it will be explicitly skipped when that file is missing. Other case selectors are `--case late_calls` and `--case negative_gap`.
+
+**E. Run the complementary tool and session statistics:**
+
+```powershell
+& $PY (Join-Path $REPO 'analysis\trace_facts\check_tool_latency.py')
+& $PY (Join-Path $REPO 'analysis\trace_facts\check_session_latency.py')
+& $PY (Join-Path $REPO 'analysis\trace_facts\check_tool_thresholds.py')
+& $PY (Join-Path $REPO 'analysis\trace_facts\check_prediction_fields.py')
+```
+
+**Check reproduction:** Compare the output with [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md): 431,905 valid tool intervals, 331,400 merged episodes, and 277,777 simple tool-wait proxy candidates for the audited TraceLab release. Numerical agreement is an audit checkpoint, not proof that the records are exact GPU KV-cache idle intervals.
 
 ## 5. Output datasets: semantics, features, and labels
 
