@@ -4,7 +4,11 @@
 
 How should an LLM serving system spend its GPU memory across many concurrent agent sessions that keep pausing for tool calls?
 
-> **Status:** Proposal submitted (Sep 2026). Implementation begins Week 1. No results yet — nothing in `results/` should be treated as final until this line says otherwise.
+> **Project status:** Week 3 TraceLab workload characterization and validation are implemented on `Hangting_week3`. The derived tool-activity records support preliminary duration modeling, not yet validated GPU KV-cache retention intervals. Do not interpret exploratory outputs as measured latency or memory savings.
+
+## Week 3 analysis — start here
+
+For the complete branch-wide script guide, purpose, data provenance, execution commands, dataset feature/label rules, and the Weeks 4–10 handoff, see **[Week 3 README](analysis/hangting_week3/README.md)**. The [Week 3 validation report](analysis/hangting_week3/WEEK3_VALIDATION.md) records reproduced statistics and the Codex round-attribution issue. The branch combines `week3/` round-gap plots, `analysis/trace_facts/` latency reports, and `analysis/hangting_week3/` overlap-aware candidate extraction plus QA.
 
 ---
 
