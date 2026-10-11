@@ -78,21 +78,30 @@ mkdir -p group_work
 REPO=~/kv-week3-work/agent-kv-retention-hangting
 ```
 
-**A. Existing round-gap table and figures (optional, useful for comparison):**
+**A. Original round-gap table and plots from Brian's branch (optional comparison):**
 
-The original `week3/` scripts write to `our_work/`, while the new pipeline writes to `group_work/`. On a new checkout, create a separate `our_work` directory and, if needed, copy the resulting `pauses.parquet` into `group_work` for attribution checks:
+Brian's source scripts remain on [his branch](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3), not in this checkout. Retrieve them without switching away from `Hangting_week3`:
 
 ```bash
+git -C "$REPO" fetch origin Brian
 mkdir -p our_work
-python "$REPO/week3/build_pause_table.py"
-python "$REPO/week3/plot_pause_cdf.py"
-python "$REPO/week3/plot_pause_by_tool.py"
-python "$REPO/week3/plot_context_size.py"
+for name in build_pause_table.py plot_pause_cdf.py plot_pause_by_tool.py plot_context_size.py; do
+    git -C "$REPO" show "origin/Brian:week3/$name" > "our_work/$name"
+done
+python our_work/build_pause_table.py
+python our_work/plot_pause_cdf.py
+python our_work/plot_pause_by_tool.py
+python our_work/plot_context_size.py
 cp our_work/pauses.parquet group_work/pauses.parquet
 ```
 
-The source-controlled `week3/data/pauses.parquet` can also be used for original round-gap analyses, but verify it corresponds to the same trace release and extraction code.
+Alternatively, to reproduce the original pause-table *audit* without rerunning the figures:
 
+```bash
+git -C "$REPO" show origin/Brian:week3/data/pauses.parquet > group_work/pauses.parquet
+```
+
+These historical inter-round records have known Codex attribution limitations; they are not a ground-truth KV-idle dataset. The original plots use illustrative cost assumptions.
 **B. Build the tool-activity datasets (main pipeline):**
 
 ```bash
