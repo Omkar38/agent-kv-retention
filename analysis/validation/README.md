@@ -40,7 +40,7 @@ Brian's original branch contains [`data/pauses.parquet`](https://github.com/Omka
 
 | File | Responsibility |
 |---|---|
-| `build_tool_dataset.py` | Complete four-stage pipeline: direct tool intervals → merged tool-activity episodes → first-tool candidate features → audited candidate flags. Writes four distinct Parquet artifacts. |
+| `build_tool_dataset.py` | Complete four-stage pipeline: direct tool intervals → merged tool-activity episodes → first-tool candidate features → audited candidate flags. Writes four standard Parquet artifacts; an optional fifth step aligns tool episodes to nearby generation/user signals. |
 | `validate_week3.py` | Quantitative checks for within-round tool results, timestamp consistency, overlapping calls, event signals inside episodes, boundary/feature completeness, and next-round result-attribution timing. |
 | `inspect_cases.py` | Reproducible case studies of a Codex late tool call, late-match origin breakdown, and a Claude negative round-gap example. |
 | `WEEK3_VALIDATION.md` | Actual measurements, event-ordering issues, interpretations, and research handoff constraints. |
@@ -114,7 +114,7 @@ These historical inter-round records have known Codex attribution limitations; t
 python "$REPO/analysis/validation/build_tool_dataset.py"
 ```
 
-The builder runs all four stages sequentially. You can rerun a stage using `--step intervals`, `--step episodes`, `--step candidates`, or `--step audit` when its inputs are present. Run `--help` for the options. Expect four files in `group_work/` (described below).
+The builder runs five stages sequentially, including a provisional tool-to-generation alignment (not GPU idleness). You can rerun a stage using `--step intervals`, `--step episodes`, `--step candidates`, `--step audit`, or `--step wait_candidates` when its inputs are present. Run `--help` for the options. Expect five files in `group_work/` (described below).
 
 **C. Run checks and examine anomalies:**
 
@@ -227,6 +227,8 @@ The original pause-table attribution check requires `group_work\pauses.parquet`;
 | `group_work/tool_activity_episodes.parquet` | Union of overlapping timestamp-valid tool calls in a session | `start_ts`, `end_ts`, `n_calls`, `n_rounds`, `tool_activity_duration_s`. Counts and full tool lists reflect the **entire observed episode**. |
 | `group_work/tool_episode_candidates.parquet` | An episode linked to its earliest emitted tool call | `candidate_start_ts`, `first_tool_name`, `first_tool_input_chars`, `context_tokens`, `tool_activity_duration_s`, and retrospective episode composition. |
 | `group_work/tool_episode_candidates_audited.parquet` | Candidate above plus diagnostic flags | `generation_events_inside`, `user_messages_inside`, `simple_tool_wait_proxy`; all simple and complex cases are retained. |
+
+`group_work/agent_wait_candidates.parquet` aligns those candidate episodes to preceding and following recorded generation signals and subsequent user messages. Its `alignment_status`, `prior_generation_signal_ts`, `next_generation_signal_ts`, and signal offsets are retrospective diagnostic fields. They **do not** provide exact inference-stop timestamps, actual GPU scheduling boundaries, or KV-cache residency. `wait_candidates` is for offline audit, not direct retention-policy scoring.
 
 **Suggested preliminary prediction target:** `tool_activity_duration_s`, explicitly labeled *tool-activity duration*. This is not the wall-clock time to the next LLM decode and is not a verified KV-cache-residency interval.
 
