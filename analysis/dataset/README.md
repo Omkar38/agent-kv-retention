@@ -52,17 +52,7 @@ python "$REPO/analysis/validation/build_pause_handoff.py"
 python "$REPO/analysis/validation/check_handoff_bias.py"
 ```
 
-Outputs are written initially to `TraceLab/group_work/`. To save the exact generated artifacts here on **`Hangting_week3`**, copy and commit:
-
-```bash
-git -C "$REPO" switch Hangting_week3
-git -C "$REPO" pull --ff-only origin Hangting_week3
-cp group_work/pauses_v2.parquet "$REPO/analysis/dataset/"
-cp group_work/week4_pause_train.parquet "$REPO/analysis/dataset/"
-git -C "$REPO" add analysis/dataset/
-git -C "$REPO" commit -m "Add validated Week 4 TraceLab pause datasets"
-git -C "$REPO" push origin Hangting_week3
-```
+Outputs are written initially to `TraceLab/group_work/`.
 
 On Windows PowerShell, use `Copy-Item` and the corresponding `$REPO` path. The raw database and all intermediate files remain outside the repository.
 
