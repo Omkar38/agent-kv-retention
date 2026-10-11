@@ -73,15 +73,19 @@ print(
 print("-" * 100)
 
 for row in results:
+    (
+        tool, calls, mean, median,
+        p50, p90, p95, p99, p999
+    ) = row
     print(
-        f"{str(row[0]):20} "
-        f"{row[1]:10,} "
-        f"{row[2]:10} "
-        f"{row[3]:10} "
-        f"{row[4]:10} "
-        f"{row[5]:10} "
-        f"{row[6]:10} "
-        f"{row[7]:10}"
+	f"{str(tool):20} "
+        f"{calls:10,} "
+        f"{mean:10} "
+        f"{p50:10} "
+        f"{p90:10} "
+        f"{p95:10} "
+        f"{p99:10} "
+        f"{p999:10}"
     )
 
 connection.close()
