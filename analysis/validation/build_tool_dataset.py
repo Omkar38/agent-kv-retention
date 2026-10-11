@@ -390,11 +390,123 @@ def audit_candidates():
     con.close()
 
 
+
+def build_agent_wait_candidates():
+    """Align tool activity with nearby trace signals (NOT actual GPU cache idleness).
+
+    Nearest reasoning/text/tool_call signals are observations, not exact
+    inference-start/inference-stop timestamps. Hindsight fields must not be
+    used to train a decision-time predictor.
+    """
+    import duckdb
+
+    db = "trace/syfi_coding_trace.duckdb"
+    inp = "group_work/tool_episode_candidates_audited.parquet"
+    out = "group_work/agent_wait_candidates.parquet"
+    con = duckdb.connect(db, read_only=True)
+
+    sql = """
+    WITH generation_signals AS (
+        SELECT r.provider, r.session_id, e.timestamp AS generation_signal_ts
+        FROM timing_events e
+        JOIN rounds r USING (round_pk)
+        WHERE e.event_type IN ('reasoning', 'text', 'tool_call')
+          AND e.timestamp IS NOT NULL
+    ),
+    user_signals AS (
+        SELECT r.provider, r.session_id, e.timestamp AS user_message_ts
+        FROM timing_events e
+        JOIN rounds r USING (round_pk)
+        WHERE e.event_type = 'user_message'
+          AND e.timestamp IS NOT NULL
+    ),
+    episodes AS (
+        SELECT * FROM read_parquet('group_work/tool_episode_candidates_audited.parquet')
+    ),
+    prior_generation AS (
+        SELECT ep.*, g.generation_signal_ts AS prior_generation_signal_ts
+        FROM episodes ep
+        ASOF LEFT JOIN generation_signals g
+          ON ep.provider = g.provider
+         AND ep.session_id = g.session_id
+         AND ep.candidate_start_ts >= g.generation_signal_ts
+    ),
+    next_generation AS (
+        SELECT p.*, g.generation_signal_ts AS next_generation_signal_ts
+        FROM prior_generation p
+        ASOF LEFT JOIN generation_signals g
+          ON p.provider = g.provider
+         AND p.session_id = g.session_id
+         AND p.tool_activity_end_ts < g.generation_signal_ts
+    ),
+    next_user AS (
+        SELECT p.*, u.user_message_ts AS next_user_message_ts
+        FROM next_generation p
+        ASOF LEFT JOIN user_signals u
+          ON p.provider = u.provider
+         AND p.session_id = u.session_id
+         AND p.tool_activity_end_ts < u.user_message_ts
+    )
+    SELECT *,
+        EPOCH(candidate_start_ts - prior_generation_signal_ts)
+            AS pre_tool_signal_offset_s,
+        EPOCH(next_generation_signal_ts - tool_activity_end_ts)
+            AS post_tool_resume_signal_offset_s,
+        next_user_message_ts < next_generation_signal_ts
+            AS user_before_next_generation,
+        CASE
+            WHEN generation_events_inside > 0 THEN 'generation_inside_tool'
+            WHEN user_messages_inside > 0 THEN 'user_input_inside_tool'
+            WHEN prior_generation_signal_ts IS NULL THEN 'prior_generation_missing'
+            WHEN next_generation_signal_ts IS NULL THEN 'next_generation_missing'
+            WHEN next_user_message_ts < next_generation_signal_ts
+                THEN 'user_before_continuation'
+            WHEN EPOCH(next_generation_signal_ts - tool_activity_end_ts) > 3600
+                THEN 'distant_continuation'
+            WHEN observed_n_calls > 1 THEN 'multi_call_candidate'
+            ELSE 'single_tool_candidate'
+        END AS alignment_status
+    FROM next_user
+    """
+    con.execute("COPY (" + sql + ") TO '" + out + "' (FORMAT PARQUET)")
+    print(f"Saved tool/generation alignment candidates: {out}")
+
+    result = con.execute("""
+        SELECT provider, alignment_status, COUNT(*) AS episodes,
+               ROUND(MEDIAN(tool_activity_duration_s), 3)
+                   AS median_tool_activity_s,
+               ROUND(MEDIAN(post_tool_resume_signal_offset_s), 3)
+                   AS median_post_tool_signal_gap_s
+        FROM read_parquet(?)
+        GROUP BY provider, alignment_status
+        ORDER BY provider, episodes DESC
+    """, [out]).df()
+    print("\n=== Tool-activity / generation-signal alignment ===")
+    print(result.to_string(index=False))
+
+    totals = con.execute("""
+        SELECT provider, COUNT(*) AS all_episodes,
+               COUNT(*) FILTER (WHERE prior_generation_signal_ts IS NULL)
+                   AS missing_prior_generation,
+               COUNT(*) FILTER (WHERE next_generation_signal_ts IS NULL)
+                   AS missing_next_generation,
+               COUNT(*) FILTER (
+                   WHERE next_user_message_ts < next_generation_signal_ts
+               ) AS human_message_before_next_generation
+        FROM read_parquet(?)
+        GROUP BY provider ORDER BY provider
+    """, [out]).df()
+    print("\n=== Alignment coverage (overlapping flags) ===")
+    print(totals.to_string(index=False))
+    con.close()
+
+
 STEPS = [
     ("intervals", extract_tool_intervals),
     ("episodes", group_tool_episodes),
     ("candidates", construct_candidates),
     ("audit", audit_candidates),
+    ("wait_candidates", build_agent_wait_candidates),
 ]
 
 def main():
