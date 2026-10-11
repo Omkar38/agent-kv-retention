@@ -27,14 +27,12 @@ Two **different** observational units are analyzed. The original round-gap table
 
 Brian's original branch contains [`data/pauses.parquet`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/data/pauses.parquet), the [figures](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3/figures), and the [original README](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/README.md). Two PDFs found in this branch's history remain accessible at commit `63dddf308444f454fd8b35316c58ee9769276fe4`: [Week 3 trace-processing report](https://github.com/Omkar38/agent-kv-retention/blob/63dddf308444f454fd8b35316c58ee9769276fe4/week3/Week3_Trace_Processing_Report.pdf) and [Week 3 progress update](https://github.com/Omkar38/agent-kv-retention/blob/63dddf308444f454fd8b35316c58ee9769276fe4/docs/week3-progress-update.pdf). These PDFs were not on Brian's or David's original branches; the linked copies are historical records. Brian's README also mentions `look_at_pauses.py`, which is absent from the checked branch.
 
-### `analysis/trace_facts/` — tool and session workload statistics
+### `analysis/trace_facts/` — consolidated tool and session statistics
 
 | File | Responsibility |
 |---|---|
-| `check_tool_latency.py` | Distribution of individual tool-call wall latencies, including P50, P90, P95, P99 and P99.9; printing order was corrected. |
-| `check_session_latency.py` | Per-session aggregates (counts, sums, max and thresholds). Sums double-count overlapping tool intervals and must **not** be described as elapsed session waiting time. |
-| `check_tool_thresholds.py` | Shares of valid calls above 5, 10, 30 and 60 seconds by tool type. Counts in this script exclude invalid/null latency records by its WHERE filter. |
-| `check_prediction_fields.py` | Sample schema fields and coverage for selected tools using columns present in the released TraceLab schema. Availability in a table alone does **not** establish availability at retention decision time. |
+| [`trace_statistics.py`](../trace_facts/trace_statistics.py) | Runs David's four original explorations through `--step tool_latency|session_latency|tool_thresholds|prediction_fields|all`. Includes per-call distribution, per-session aggregates, tail thresholds and schema-field coverage. Per-session sums **double-count overlaps** and are not elapsed waiting time. Feature-field coverage is not proof of decision-time observability. |
+| [`README.md`](../trace_facts/README.md) | Attribution, usage, descriptive limitations and reproducibility. |
 
 ### `analysis/validation/` — overlap-aware tool extraction and QA
 
@@ -137,10 +135,7 @@ The feature-timing check and late-call case require `group_work/pauses.parquet`;
 **E. Run the complementary tool statistics:**
 
 ```bash
-python "$REPO/analysis/trace_facts/check_tool_latency.py"
-python "$REPO/analysis/trace_facts/check_session_latency.py"
-python "$REPO/analysis/trace_facts/check_tool_thresholds.py"
-python "$REPO/analysis/trace_facts/check_prediction_fields.py"
+python "$REPO/analysis/trace_facts/trace_statistics.py" --step all
 ```
 
 Because these are exploratory scripts, outputs are printed directly to the terminal. The figures from step A are stored in `our_work/`. For a reproducibility check, compare counts with [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md), not just whether a script exits successfully.
@@ -227,10 +222,7 @@ The original pause-table attribution check requires `group_work\pauses.parquet`;
 **E. Run the complementary tool and session statistics:**
 
 ```powershell
-& $PY (Join-Path $REPO 'analysis\trace_facts\check_tool_latency.py')
-& $PY (Join-Path $REPO 'analysis\trace_facts\check_session_latency.py')
-& $PY (Join-Path $REPO 'analysis\trace_facts\check_tool_thresholds.py')
-& $PY (Join-Path $REPO 'analysis\trace_facts\check_prediction_fields.py')
+& $PY (Join-Path $REPO 'analysis\trace_facts\trace_statistics.py') --step all
 ```
 
 **Check reproduction:** Compare the output with [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md): 431,905 valid tool intervals, 331,400 merged episodes, and 277,777 simple tool-wait proxy candidates for the audited TraceLab release. Numerical agreement is an audit checkpoint, not proof that the records are exact GPU KV-cache idle intervals.
