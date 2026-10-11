@@ -3,7 +3,7 @@
 **Project:** Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents
 **Scope:** The `Hangting_week3` branch includes round-gap characterization, tool latency analysis, interval extraction, overlap-aware tool-activity episodes, data-quality checks, and a handoff for learning-augmented retention research.
 
-The practical entry points for this branch are `week3/`, `analysis/trace_facts/`, and `analysis/validation/`. This README explains their combined purpose, inputs, usage, and interpretation. [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md) contains the observed counts and anomaly investigations.
+This branch contains `analysis/trace_facts/` and `analysis/validation/`. Brian's original [round-gap analysis](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3) is referenced externally, rather than copied here. This README explains their combined purpose, inputs, usage, and interpretation. [WEEK3_VALIDATION.md](WEEK3_VALIDATION.md) contains the observed counts and anomaly investigations.
 
 ## 1. Purpose and significance
 
@@ -15,17 +15,17 @@ Two **different** observational units are analyzed. The original round-gap table
 
 ## 2. Scripts by responsibility
 
-### `week3/` — round-gap workload characterization
+### [Brian's `week3/`](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3) — round-gap workload characterization
 
 | File | Responsibility |
 |---|---|
-| `build_pause_table.py` | Build `pauses.parquet` from round transitions, with cause, duration, tool attribution, context proxy and usability flags. Its current next-round matching can attribute later Codex calls to an earlier gap; see the validation report. |
-| `look_at_session.py` | Inspect one session's raw round/event ordering to explain unexpected gaps or event types. |
-| `plot_pause_cdf.py` | Plot the cumulative distribution of original round-gap durations, including illustrative break-even thresholds. |
-| `plot_pause_by_tool.py` | Plot durations by attributed tool and demonstrate a session-held-out, tool-name-only long/short duration rule. Its accuracy is **not** a measured retention-policy cost improvement. |
-| `plot_context_size.py` | Plot context-token distribution and illustrative rebuild-time sensitivity; token/s speeds are assumptions, **not** hardware calibrations. |
+| [`build_pause_table.py`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/build_pause_table.py) | Build `pauses.parquet` from round transitions, with cause, duration, tool attribution, context proxy and usability flags. Its current next-round matching can attribute later Codex calls to an earlier gap; see the validation report. |
+| [`look_at_session.py`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/look_at_session.py) | Inspect one session's raw round/event ordering to explain unexpected gaps or event types. |
+| [`plot_pause_cdf.py`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/plot_pause_cdf.py) | Plot the cumulative distribution of original round-gap durations, including illustrative break-even thresholds. |
+| [`plot_pause_by_tool.py`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/plot_pause_by_tool.py) | Plot durations by attributed tool and demonstrate a session-held-out, tool-name-only long/short duration rule. Its accuracy is **not** a measured retention-policy cost improvement. |
+| [`plot_context_size.py`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/plot_context_size.py) | Plot context-token distribution and illustrative rebuild-time sensitivity; token/s speeds are assumptions, **not** hardware calibrations. |
 
-Additional materials already in `week3/` include `data/pauses.parquet`, figures, and the trace-processing report. Existing documentation may mention `look_at_pauses.py`; that file is not present in this branch.
+Brian's original branch contains [`data/pauses.parquet`](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/data/pauses.parquet), the [figures](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3/figures), and the [original README](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/README.md). Two PDFs found in this branch's history remain accessible at commit `63dddf308444f454fd8b35316c58ee9769276fe4`: [Week 3 trace-processing report](https://github.com/Omkar38/agent-kv-retention/blob/63dddf308444f454fd8b35316c58ee9769276fe4/week3/Week3_Trace_Processing_Report.pdf) and [Week 3 progress update](https://github.com/Omkar38/agent-kv-retention/blob/63dddf308444f454fd8b35316c58ee9769276fe4/docs/week3-progress-update.pdf). These PDFs were not on Brian's or David's original branches; the linked copies are historical records. Brian's README also mentions `look_at_pauses.py`, which is absent from the checked branch.
 
 ### `analysis/trace_facts/` — tool and session workload statistics
 
@@ -49,7 +49,7 @@ Additional materials already in `week3/` include `data/pauses.parquet`, figures,
 ## 3. Data source and provenance
 
 - Primary raw source: [TraceLab](https://github.com/uw-syfi/TraceLab) coding-agent trace, release **v0.0.1**, database file `trace/syfi_coding_trace.duckdb`. Consult the original release and license terms and cite TraceLab in papers, reports and plots.
-- The `week3/` round-gap builder and plots are from the team's earlier Week 3 contribution; `analysis/trace_facts/` holds the team's tool-latency and schema analysis. The overlap-aware pipeline and the cross-workstream validation are documented in `analysis/validation/`.
+- Brian's [`week3/` source](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3) supplies the original round-gap builder, plots, and derived pause data; they are not duplicated here. `analysis/trace_facts/` holds David's tool-latency and schema analysis, with documented corrections. The overlap-aware pipeline and cross-workstream validation are under `analysis/validation/`.
 - The original derived round-gap dataset and figures are *preserved* rather than rewritten after the Codex attribution audit. Reproduced counts describe that original extraction, not a corrected KV-retention ground truth.
 - All measurements in the validation report were obtained from the group's local copy of the released DuckDB file on **October 11, 2026**. Parquet outputs generated locally are not required to be committed to source control. Record the release/version and any preprocessing changes in subsequent experiments.
 
@@ -65,7 +65,6 @@ kv-week3-work/
 │   ├── trace/syfi_coding_trace.duckdb
 │   └── group_work/
 └── agent-kv-retention-hangting/
-    ├── week3/
     └── analysis/
         ├── trace_facts/
         └── validation/
