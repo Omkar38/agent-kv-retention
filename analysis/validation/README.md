@@ -40,7 +40,8 @@ Brian's original branch contains [`data/pauses.parquet`](https://github.com/Omka
 
 | File | Responsibility |
 |---|---|
-| `build_tool_dataset.py` | Complete four-stage pipeline: direct tool intervals → merged tool-activity episodes → first-tool candidate features → audited candidate flags. Writes four standard Parquet artifacts; an optional fifth step aligns tool episodes to nearby generation/user signals. |
+| `build_tool_dataset.py` | Six-stage extraction and diagnostic workflow: intervals, overlap-aware episodes, candidates, audit, event alignment, retrospective classification. |
+| `build_pause_handoff.py` | **Week 4 bridge:** join Brian's original pause records with Hangting's independently timestamped source-round tool calls; export a quality-labeled pause table and leakage-restricted strict training subset. See [WEEK4_HANDOFF.md](WEEK4_HANDOFF.md). |
 | `validate_week3.py` | Quantitative checks for within-round tool results, timestamp consistency, overlapping calls, event signals inside episodes, boundary/feature completeness, and next-round result-attribution timing. |
 | `inspect_cases.py` | Reproducible case studies of a Codex late tool call, late-match origin breakdown, and a Claude negative round-gap example. |
 | `WEEK3_VALIDATION.md` | Actual measurements, event-ordering issues, interpretations, and research handoff constraints. |
@@ -114,9 +115,17 @@ These historical inter-round records have known Codex attribution limitations; t
 python "$REPO/analysis/validation/build_tool_dataset.py"
 ```
 
-The builder runs five stages sequentially, including a provisional tool-to-generation alignment (not GPU idleness). You can rerun a stage using `--step intervals`, `--step episodes`, `--step candidates`, `--step audit`, or `--step wait_candidates` when its inputs are present. Run `--help` for the options. Expect five files in `group_work/` (described below).
+The builder runs **six** stages sequentially, including provisional tool-to-generation alignment and retrospective classification (not GPU idleness). You can rerun a stage using `--step intervals`, `--step episodes`, `--step candidates`, `--step audit`, `--step wait_candidates`, or `--step classify`. Run `--help` for options.
 
-**C. Run checks and examine anomalies:**
+**C. Build Brian/Hangting Week 4 pause handoff** (requires `group_work/pauses.parquet` from step A and `tool_intervals.parquet` from step B):
+
+```bash
+python "$REPO/analysis/validation/build_pause_handoff.py"
+```
+
+This preserves Brian's table, writes `group_work/pauses_v2.parquet`, and creates `group_work/week4_pause_train.parquet` as a conservative **inter-round pause** prediction cohort. See [WEEK4_HANDOFF.md](WEEK4_HANDOFF.md). The original `pauses.parquet` is not overwritten.
+
+**D. Run checks and examine anomalies:**
 
 ```bash
 python "$REPO/analysis/validation/validate_week3.py"
@@ -125,7 +134,7 @@ python "$REPO/analysis/validation/inspect_cases.py" --case codex
 
 The feature-timing check and late-call case require `group_work/pauses.parquet`; without it, those checks are skipped and explicitly reported as skipped. Other inspection modes are `--case late_calls` and `--case negative_gap`. For a single quantitative check, use `validate_week3.py --step <name>` (see `--help`).
 
-**D. Run the complementary tool statistics:**
+**E. Run the complementary tool statistics:**
 
 ```bash
 python "$REPO/analysis/trace_facts/check_tool_latency.py"
@@ -190,13 +199,21 @@ To regenerate Brian's round-gap dataset and figures from the downloaded DuckDB i
 Copy-Item 'our_work\pauses.parquet' 'group_work\pauses.parquet' -Force
 ```
 
-**C. Build the overlap-aware tool-activity dataset.** This runs all four extraction stages and writes Parquet outputs to `group_work\`:
+**C. Build the overlap-aware tool-activity dataset.** This runs all six diagnostic stages and writes Parquet outputs to `group_work\`:
 
 ```powershell
 & $PY (Join-Path $REPO 'analysis\validation\build_tool_dataset.py')
 ```
 
-To rerun only one completed stage, append `--step intervals`, `--step episodes`, `--step candidates`, or `--step audit`, ensuring the earlier stage outputs exist.
+To rerun one stage, append `--step intervals`, `--step episodes`, `--step candidates`, `--step audit`, `--step wait_candidates`, or `--step classify`, ensuring required inputs exist.
+
+**C2. Export the Brian/Hangting Week 4 pause handoff:**
+
+```powershell
+& $PY (Join-Path $REPO 'analysis\validation\build_pause_handoff.py')
+```
+
+Requires `group_work\pauses.parquet` and `group_work\tool_intervals.parquet`. It writes the quality-labeled original-pause bridge and a strict pause-prediction cohort without changing the original table. See [WEEK4_HANDOFF.md](WEEK4_HANDOFF.md).
 
 **D. Run validation and anomaly inspection:**
 
@@ -227,6 +244,10 @@ The original pause-table attribution check requires `group_work\pauses.parquet`;
 | `group_work/tool_activity_episodes.parquet` | Union of overlapping timestamp-valid tool calls in a session | `start_ts`, `end_ts`, `n_calls`, `n_rounds`, `tool_activity_duration_s`. Counts and full tool lists reflect the **entire observed episode**. |
 | `group_work/tool_episode_candidates.parquet` | An episode linked to its earliest emitted tool call | `candidate_start_ts`, `first_tool_name`, `first_tool_input_chars`, `context_tokens`, `tool_activity_duration_s`, and retrospective episode composition. |
 | `group_work/tool_episode_candidates_audited.parquet` | Candidate above plus diagnostic flags | `generation_events_inside`, `user_messages_inside`, `simple_tool_wait_proxy`; all simple and complex cases are retained. |
+| `group_work/agent_wait_candidates.parquet` | Tool-activity episodes aligned to adjacent generation/user signals | Retrospective event timing, not actual GPU idleness. |
+| `group_work/agent_waits_classified.parquet` | Retrospectively grouped episodes | Interaction type, tool topology, quality and continuation lag. |
+| `group_work/pauses_v2.parquet` | **Brian's inter-round pause table with Hangting's validation joined** | Preserves all original rows and features, adds `quality_reason`, source-round timing, and conservative `target_pause_s`. |
+| `group_work/week4_pause_train.parquet` | **Week 4 strictly screened pause-duration training cohort** | Limited prediction-safe feature projection plus deterministic split by session. See [WEEK4_HANDOFF.md](WEEK4_HANDOFF.md). |
 
 `group_work/agent_wait_candidates.parquet` aligns those candidate episodes to preceding and following recorded generation signals and subsequent user messages. Its `alignment_status`, `prior_generation_signal_ts`, `next_generation_signal_ts`, and signal offsets are retrospective diagnostic fields. They **do not** provide exact inference-stop timestamps, actual GPU scheduling boundaries, or KV-cache residency. `wait_candidates` is for offline audit, not direct retention-policy scoring.
 
@@ -246,7 +267,7 @@ This means the branch establishes a reproducible **workload characterization and
 
 ## 7. How later weeks can use this work
 
-**Week 4 — pause-duration prediction.** Train preliminary models on directly observed tool-activity durations; split by `session_id` to prevent session leakage. Compare tool-only, argument-size, provider, and verified context features; evaluate error, calibration and long-tail bias separately on simple versus complex episodes. Do not use hindsight episode summaries as predictor features.
+**Week 4 — pause-duration prediction.** Use [the Brian/Hangting quality-labeled pause handoff](WEEK4_HANDOFF.md) as the **primary conservative pause-duration target**, then train separate exploratory models on directly observed tool-activity durations; split by `session_id` to prevent session leakage. Compare tool-only, argument-size, provider, and verified context features; evaluate error, calibration and long-tail bias separately on simple versus complex episodes. Do not use hindsight episode summaries as predictor features.
 
 **Week 5 — project presentation.** Explain why the tool-latency tail and provider-specific trace structure matter for retention and why an outcome-based feature join can overstate predictability. Present original figures as baseline exploratory analysis and label placeholder hardware costs.
 
