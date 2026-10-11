@@ -218,10 +218,11 @@ def main():
         (provider, session_id, split_for(provider, session_id))
         for provider, session_id in sessions
     ])
+    # Export only verified provisional decision-time features. Keep model and
+    # context_tokens_proxy in pauses_v2 for separate timing verification.
     con.execute("""
         CREATE TEMP TABLE week4 AS
         SELECT h.provider, h.session_id, h.round_index, s.split,
-               h.model, h.context_tokens_proxy,
                h.tool_name_at_decision, h.tool_input_chars_at_decision,
                h.target_pause_s
         FROM handoff h JOIN splits s USING (provider, session_id)
