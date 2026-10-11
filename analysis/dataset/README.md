@@ -4,7 +4,7 @@ These two Parquet artifacts connect **Brian's Week 3 round-gap pause extraction*
 
 ## Files
 
-| File | Rows (first validated run, 2026-10-11) | Purpose |
+| File | Rows (first validated run) | Purpose |
 |---|---:|---|
 | `pauses_v2.parquet` | **357,161** | Full Brian-derived pause table, augmented with source-round timing checks, quality reasons and conservative eligibility flags. Preserves originally unusable and ambiguous rows for auditing. |
 | `week4_pause_train.parquet` | **219,465** | Strict single-tool **inter-round pause-duration proxy** cohort for the initial Week 4 predictor: 105,395 Claude and 114,070 Codex records. |
