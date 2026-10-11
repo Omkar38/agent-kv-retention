@@ -391,7 +391,144 @@ def check_prior_pause_feature_timing():
     con.close()
 
 
+def audit_round_boundaries():
+    """Audit round-to-round timestamp proxies; not a GPU cache-idle measurement."""
+    import duckdb
+
+    database = "trace/syfi_coding_trace.duckdb"
+    output = "group_work/round_boundary_audit.parquet"
+    con = duckdb.connect(database, read_only=True)
+
+    query = """
+    WITH anchors AS (
+        SELECT
+            r.provider, r.session_id, r.round_pk, r.round_index,
+            MIN(e.timestamp) AS first_event_ts,
+            MIN(e.timestamp) FILTER (WHERE e.event_type IN
+                ('reasoning', 'text', 'tool_call')) AS first_generation_signal_ts,
+            MAX(e.timestamp) FILTER (WHERE e.event_type IN
+                ('reasoning', 'text', 'tool_call')) AS last_generation_signal_ts,
+            MAX(e.timestamp) FILTER (WHERE e.event_type = 'usage_report')
+                AS last_usage_report_ts,
+            MIN(e.timestamp) FILTER (WHERE e.event_type IN
+                ('tool_result', 'user_message')) AS first_input_ts,
+            MAX(e.timestamp) FILTER (WHERE e.event_type IN
+                ('tool_result', 'user_message')) AS last_input_ts,
+            MAX(e.timestamp) FILTER (WHERE e.event_type = 'tool_result')
+                AS last_tool_result_ts,
+            MAX(e.timestamp) FILTER (WHERE e.event_type = 'user_message')
+                AS last_user_message_ts
+        FROM rounds r
+        LEFT JOIN timing_events e USING (round_pk)
+        GROUP BY r.provider, r.session_id, r.round_pk, r.round_index
+    ),
+    round_flags AS (
+        SELECT *,
+            CASE
+                WHEN last_generation_signal_ts IS NULL THEN NULL
+                WHEN last_usage_report_ts >= last_generation_signal_ts
+                    THEN last_usage_report_ts
+                ELSE last_generation_signal_ts
+            END AS estimated_stop_ts,
+            COALESCE(
+                last_tool_result_ts > first_generation_signal_ts, FALSE
+            ) AS tool_result_after_generation,
+            COALESCE(
+                last_user_message_ts > first_generation_signal_ts, FALSE
+            ) AS user_message_after_generation
+        FROM anchors
+    ),
+    paired AS (
+        SELECT *,
+            LEAD(round_pk) OVER w AS next_round_pk,
+            LEAD(round_index) OVER w AS next_round_index,
+            LEAD(first_input_ts) OVER w AS next_first_input_ts,
+            LEAD(first_generation_signal_ts) OVER w AS next_first_generation_signal_ts,
+            LEAD(tool_result_after_generation) OVER w AS next_tool_result_after_generation,
+            LEAD(user_message_after_generation) OVER w AS next_user_message_after_generation
+        FROM round_flags
+        WINDOW w AS (
+            PARTITION BY provider, session_id
+            ORDER BY round_index, first_event_ts NULLS LAST, round_pk
+        )
+    )
+    SELECT
+        provider, session_id, round_pk, round_index,
+        first_event_ts, first_input_ts, last_input_ts,
+        first_generation_signal_ts, last_generation_signal_ts,
+        last_usage_report_ts, estimated_stop_ts,
+        next_round_pk, next_round_index,
+        next_first_input_ts, next_first_generation_signal_ts,
+        tool_result_after_generation, user_message_after_generation,
+        next_tool_result_after_generation, next_user_message_after_generation,
+        EPOCH(next_first_input_ts - estimated_stop_ts)
+            AS gap_to_next_first_input_s,
+        CASE
+            WHEN next_round_pk IS NULL THEN 'session_end'
+            WHEN estimated_stop_ts IS NULL THEN 'stop_proxy_missing'
+            WHEN next_first_input_ts IS NULL THEN 'next_input_missing'
+            WHEN next_first_input_ts < estimated_stop_ts THEN 'negative_gap'
+            WHEN next_first_generation_signal_ts < next_first_input_ts
+                THEN 'next_generation_before_input'
+            WHEN next_tool_result_after_generation
+              OR next_user_message_after_generation
+                THEN 'next_round_mixed_events'
+            WHEN tool_result_after_generation
+              OR user_message_after_generation
+                THEN 'current_round_mixed_events'
+            ELSE 'candidate_inter_round_gap'
+        END AS boundary_status
+    FROM paired
+    """
+
+    con.execute("COPY (" + query + ") TO '" + output + "' (FORMAT PARQUET)")
+    print(f"Saved boundary *audit* (not cache-idle ground truth): {output}")
+
+    summary = con.execute("""
+        SELECT provider, boundary_status, COUNT(*) AS round_transitions,
+               ROUND(MEDIAN(gap_to_next_first_input_s), 3) AS median_gap_s
+        FROM read_parquet(?)
+        GROUP BY provider, boundary_status
+        ORDER BY provider, round_transitions DESC
+    """, [output]).df()
+    print("\n=== Boundary proxy coverage by provider ===")
+    print(summary.to_string(index=False))
+
+    inversions = con.execute("""
+        WITH ordered_events AS (
+            SELECT r.provider, e.round_pk, e.event_index, e.timestamp,
+                   LAG(e.timestamp) OVER (
+                       PARTITION BY e.round_pk ORDER BY e.event_index
+                   ) AS previous_timestamp
+            FROM timing_events e
+            JOIN rounds r USING (round_pk)
+        )
+        SELECT provider,
+               COUNT(*) AS events_out_of_timestamp_order,
+               COUNT(DISTINCT round_pk) AS affected_rounds
+        FROM ordered_events
+        WHERE timestamp < previous_timestamp
+        GROUP BY provider
+        ORDER BY provider
+    """).df()
+    print("\n=== Event-index/timestamp order discrepancies ===")
+    print(inversions.to_string(index=False))
+
+    codex = con.execute("""
+        SELECT provider, session_id, round_index, estimated_stop_ts,
+               next_first_input_ts, next_first_generation_signal_ts,
+               gap_to_next_first_input_s, boundary_status
+        FROM read_parquet(?)
+        WHERE session_id = ? AND round_index IN (383, 384)
+        ORDER BY round_index
+    """, [output, "codex:019dd611-dd7c-7750-915b-910d54eaccbc"]).df()
+    print("\n=== Previously inspected Codex example ===")
+    print(codex.to_string(index=False))
+    con.close()
+
+
 STEPS = [
+    ("round_boundaries", audit_round_boundaries),
     ("within_round", check_within_round_results),
     ("intervals", check_interval_consistency),
     ("episode_generation", check_episode_generation),
@@ -407,6 +544,7 @@ def main():
     os.chdir(args.trace_root.expanduser().resolve())
     if not Path("trace/syfi_coding_trace.duckdb").is_file():
         parser.error("Missing trace/syfi_coding_trace.duckdb in --trace-root")
+    Path("group_work").mkdir(exist_ok=True)
     for name, fn in STEPS:
         if args.step not in ("all", name):
             continue
