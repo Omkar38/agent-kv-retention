@@ -1,6 +1,6 @@
 # Week 4 datasets — validated TraceLab pause handoff
 
-These two Parquet artifacts connect **Brian's Week 3 round-gap pause extraction** with **Hangting's timing, attribution, and quality checks**. They are designed for the next stage of *Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents*: pause-duration prediction and error analysis.
+These two Parquet artifacts connect **round-gap pause extraction** with **timing, attribution, and quality checks**. They are designed for the next stage of *Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents*: pause-duration prediction and error analysis.
 
 ## Files
 
