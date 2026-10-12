@@ -14,7 +14,7 @@ def main():
     if not path.exists():
         parser.error(f"Missing {path}; run build_pause_handoff.py on Brian v2 first.")
     db = duckdb.connect()
-    db.execute("CREATE TEMP VIEW pauses AS SELECT * FROM read_parquet(?)", [str(path)])
+    db.execute("CREATE TEMP VIEW pauses AS SELECT * FROM read_parquet(\'" + str(path).replace("\'", "\'\'") + "\')")
     print("\n=== Original v2 records retained by provider, log format, and cause ===")
     print(db.execute("""
         SELECT provider, log_format, cause, COUNT(*) AS all_records,
