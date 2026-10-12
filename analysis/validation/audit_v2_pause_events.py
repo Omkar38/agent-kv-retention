@@ -30,8 +30,8 @@ def main():
     print("\n=== Independent event evidence for Version 2 pauses ===")
     # Match source rounds and their immediate next round within a session.
     # Duplicate round indexes are surfaced separately rather than multiplied
-    # into a join. Next-round results are matched only to the source round's
-    # tool calls (or next-round co-logged calls for legacy Codex).
+    # into a join. Choose the correct attributed tool-call round in base
+    # rather than putting an OR predicate inside the tool-call join.
     query = f"""
     WITH ordered_rounds AS (
         SELECT r.provider, r.session_id, r.round_index, r.round_pk,
@@ -52,7 +52,10 @@ def main():
         SELECT h.provider, h.session_id, h.round_index,
                h.log_format, h.record_category, h.timing_category,
                h.pause_s, h.pause_start_at, h.pause_end_at,
-               r.round_pk, r.next_round_pk, r.index_multiplicity
+               r.round_pk, r.next_round_pk, r.index_multiplicity,
+               CASE WHEN h.log_format = 'codex_old'
+                    THEN r.next_round_pk ELSE r.round_pk
+               END AS attributed_call_round_pk
         FROM read_parquet({source}) h
         LEFT JOIN ordered_rounds r
           ON h.provider=r.provider AND h.session_id=r.session_id
@@ -87,11 +90,7 @@ def main():
             FROM tool_calls tc JOIN rounds tr USING (round_pk)
         ) tc ON tc.tool_call_id=e.tool_call_id
               AND tc.session_id=b.session_id
-              AND (
-                   (b.log_format='codex_old' AND tc.round_pk=b.next_round_pk)
-                   OR
-                   (b.log_format <> 'codex_old' AND tc.round_pk=b.round_pk)
-              )
+              AND tc.round_pk=b.attributed_call_round_pk
         GROUP BY b.provider,b.session_id,b.round_index
     )
     SELECT b.*, sc.source_calls, sc.max_source_runner_s,
@@ -109,16 +108,19 @@ def main():
              COUNT(*) FILTER (
                  WHERE pause_s >= 0 AND max_next_result_runner_s > pause_s + 0.1
              ) AS next_result_runner_exceeds_pause_100ms,
-             COUNT(*) FILTER (
-                 WHERE pause_s >= 0 AND max_source_runner_s > pause_s + 0.1
-             ) AS source_runner_exceeds_pause_100ms,
+             CASE WHEN log_format = 'codex_old' THEN NULL
+                  ELSE COUNT(*) FILTER (
+                    WHERE pause_s >= 0 AND max_source_runner_s > pause_s + 0.1
+                  ) END AS source_runner_exceeds_pause_100ms,
              COUNT(*) FILTER (
                  WHERE pause_end_at IS NOT NULL AND latest_matched_result_at IS NOT NULL
                    AND latest_matched_result_at > pause_end_at
              ) AS matched_result_logged_after_pause_end,
              ROUND(MEDIAN(pause_s),3) AS pause_p50_s,
              ROUND(MEDIAN(max_next_result_runner_s),3) AS next_result_runner_p50_s,
-             ROUND(MEDIAN(max_source_runner_s),3) AS source_runner_p50_s
+             CASE WHEN log_format = 'codex_old' THEN NULL
+                  ELSE ROUND(MEDIAN(max_source_runner_s),3)
+             END AS source_runner_p50_s
       FROM evidence
       GROUP BY log_format,record_category
       ORDER BY log_format,rows DESC
@@ -127,7 +129,7 @@ def main():
     print("\n=== Old-format Codex examples requiring timing inspection ===")
     examples = con.execute("""
       SELECT session_id,round_index,pause_s,
-             max_next_result_runner_s,max_source_runner_s,
+             max_next_result_runner_s,
              pause_start_at,pause_end_at,latest_matched_result_at,
              index_multiplicity
       FROM evidence
@@ -141,6 +143,8 @@ def main():
     print("\nCAVEAT: A tool's runner time exceeding the recorded pause is a")
     print("measurement discrepancy to investigate, not a corrected pause duration.")
     print("Old-format call/result timestamps may be co-logged at completion.")
+    print("For codex_old, source-round runner metrics describe OTHER tools,")
+    print("not the calls attributed to the pause: excluded from comparisons.")
     print("No official dataset rows or columns have been changed.")
 
 
