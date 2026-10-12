@@ -1,5 +1,7 @@
 # Week 3 — TraceLab Processing, Workload Analysis, and Data Validation
 
+> **Week 4 update (2026-10-12):** The v1-derived `pauses_v2.parquet` and `week4_pause_train.parquet` are historical, not the active Brian Version 2 handoff. Use [WEEK4_HANDOFF.md](WEEK4_HANDOFF.md) and [../dataset/README.md](../dataset/README.md) for the updated scripts and datasets. Some older execution instructions and validation summaries below intentionally document the v1 historical audit; do not use them as the v2 handoff.
+
 **Project:** Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents
 **Scope:** The `Hangting_week3` branch includes round-gap characterization, tool latency analysis, interval extraction, overlap-aware tool-activity episodes, data-quality checks, and a handoff for learning-augmented retention research.
 
