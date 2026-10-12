@@ -2,7 +2,7 @@
 
 **Official dataset:** `pause_handoff.parquet` — one source-preserving dataset for Week 4 prediction and later cache-retention simulation.
 
-The handoff reads the Version 2 pause table from [the upstream pause extractor](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/build_pause_table.py), preserves **every source row and every source column**, and adds independent categorical diagnostics and a deterministic session split. It does not rewrite `pause_s`, `cause`, `n_tools`, `tool_names`, `tool_input_chars`, `context_tokens`, the pause endpoints, or `log_format`.
+The handoff reads the Version 2 pause table from the upstream Version 2 pause extractor, preserves **every source row and every source column**, and adds independent categorical diagnostics and a deterministic session split. It does not rewrite `pause_s`, `cause`, `n_tools`, `tool_names`, `tool_input_chars`, `context_tokens`, the pause endpoints, or `log_format`.
 
 The source contains 357,161 records; the last tested Version 2 input reported 351,497 records meeting upstream timestamp/linkage criteria and 5,664 requiring other interpretations. **All 357,161 are retained here.** The inherited binary source field `usable` remains untouched solely because the original schema must not be altered. Our analysis uses the more descriptive categories below instead.
 
@@ -26,15 +26,15 @@ The source contains 357,161 records; the last tested Version 2 input reported 35
 From the Mac terminal:
 
 ```bash
-cd ~/kv-week3-work/agent-kv-retention-hangting
+cd /path/to/project-checkout
 git switch Hangting_week3
 git pull --ff-only origin Hangting_week3
-git fetch origin Brian
+
 
 cd ~/kv-week3-work/TraceLab
-REPO=~/kv-week3-work/agent-kv-retention-hangting
+REPO=/path/to/project-checkout
 mkdir -p our_work group_work
-git -C "$REPO" show origin/Brian:week3/build_pause_table.py > our_work/build_pause_table.py
+# Obtain the current Version 2 extractor from the upstream workstream as our_work/build_pause_table.py
 python our_work/build_pause_table.py
 cp our_work/pauses.parquet group_work/pauses.parquet
 python "$REPO/analysis/validation/build_pause_handoff.py"
