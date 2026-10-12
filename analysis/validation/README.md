@@ -11,8 +11,9 @@ The **sole official Week 4 dataset** is [`../dataset/pause_handoff.parquet`](../
 | `build_pause_handoff.py` | Generate **one** lossless, categorized dataset from `group_work/pauses.parquet` (Version 2). |
 | `check_handoff_bias.py` | Report duration distributions and category coverage by provider, log format, and analysis track. |
 | `build_tool_dataset.py` | Independently study timestamped tool intervals, overlap unions, tool episodes, and tool/generation alignments. Exploratory and not an alternative pause ground truth. |
-| `validate_week3.py` | Historical timing/overlap experiments, including first-input round-boundary diagnostics. Some checks reflect the older pause extraction and must **not** be used as current Version 2 acceptance checks. |
+| `validate_week3.py` | Independent runner-vs-wall latency comparison, overlap checks, and explicitly historical first-input round-boundary diagnostics (not Version 2 pause acceptance checks). |
 | `inspect_cases.py` | Reproduce historical anomalous timestamp examples. |
+| `audit_v2_pause_events.py` | Independently compare Version 2 pause lengths against matched tool-call runner durations and result-event timestamps, with a separate older-Codex discrepancy report. Diagnostic evidence; never rewrites the dataset. |
 
 Complementary descriptive tool statistics: [`../trace_facts/trace_statistics.py`](../trace_facts/trace_statistics.py). Historical measurements and caveats: [`WEEK3_VALIDATION.md`](WEEK3_VALIDATION.md). The current dataset handoff: [`WEEK4_HANDOFF.md`](WEEK4_HANDOFF.md).
 
@@ -59,6 +60,14 @@ python "$REPO/analysis/validation/build_tool_dataset.py"
 python "$REPO/analysis/validation/validate_week3.py" --step intervals
 ```
 
-Tool timestamps and per-call duration summaries may differ from runner-reported internal execution time in older formats. They are complementary diagnostics, not a second dataset for Week 4.
+The tool extraction now records `timestamp_tool_duration_s`, `runner_tool_duration_s`, `duration_source`, and an effective `tool_duration_s` (runner internal when available, wall-clock fallback). Collapsed timestamps are flagged and excluded from timestamp-based episode union. Descriptive tool statistics also use runner-first duration. The interval-consistency check compares runner-reported and independently timestamp-derived measurements rather than two forms of the same wall duration.
+
+**Version 2 pause event audit** (requires only the original trace and the unified handoff):
+
+```bash
+python "$REPO/analysis/validation/audit_v2_pause_events.py"
+```
+
+The older Codex pause duration still uses the upstream v2 timestamp convention and may be undermeasured. This audit reports potential discrepancies; it does not invent corrected pause boundaries. The official dataset is kept lossless. Run these checks on the TraceLab machine and review the old-Codex example rows before treating their pause targets as reliable. The updated scripts have not yet been runtime-validated against the local trace.
 
 The official Week 4 artifact is one Parquet, regenerated with the categorized builder.
