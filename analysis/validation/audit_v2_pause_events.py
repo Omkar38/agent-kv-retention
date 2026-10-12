@@ -76,9 +76,11 @@ def main():
         FROM base b
         LEFT JOIN timing_events e ON e.round_pk=b.next_round_pk
                                  AND e.event_type='tool_result'
-        LEFT JOIN tool_calls tc ON tc.tool_call_id=e.tool_call_id
-        LEFT JOIN rounds tr ON tr.round_pk=tc.round_pk
-                           AND tr.session_id=b.session_id
+        LEFT JOIN (
+            SELECT tc.*, tr.session_id
+            FROM tool_calls tc JOIN rounds tr USING (round_pk)
+        ) tc ON tc.tool_call_id=e.tool_call_id
+              AND tc.session_id=b.session_id
         GROUP BY b.provider,b.session_id,b.round_index
     )
     SELECT b.*, sc.source_calls, sc.max_source_runner_s,
