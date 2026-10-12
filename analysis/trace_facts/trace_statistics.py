@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TraceLab descriptive tool, session, and field analyses.
 
-Consolidated from David's four original Week 3 scripts on this branch.
+Consolidated from four original Week 3 exploratory scripts on this branch.
 Run from the TraceLab root directory. Usage:
     python trace_statistics.py --step all
     python trace_statistics.py --step session_latency
