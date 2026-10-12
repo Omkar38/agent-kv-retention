@@ -30,7 +30,8 @@ def main():
     print("\n=== Independent event evidence for Version 2 pauses ===")
     # Match source rounds and their immediate next round within a session.
     # Duplicate round indexes are surfaced separately rather than multiplied
-    # into a join. Only directly observed timestamps are compared.
+    # into a join. Next-round results are matched only to the source round's
+    # tool calls (or next-round co-logged calls for legacy Codex).
     query = f"""
     WITH ordered_rounds AS (
         SELECT r.provider, r.session_id, r.round_index, r.round_pk,
@@ -68,9 +69,14 @@ def main():
     ),
     next_results AS (
         SELECT b.provider,b.session_id,b.round_index,
-               COUNT(e.tool_call_id) AS next_round_result_events,
-               MAX(e.timestamp) AS latest_next_result_at,
-               MAX(CASE WHEN tc.tool_internal_latency_ms >= 0
+               COUNT(e.tool_call_id) AS all_next_round_result_events,
+               COUNT(tc.tool_call_id) AS matched_next_result_events,
+               -- Only result timestamps from tools attributed to this pause.
+               -- Later tools issued by the NEXT inference round are excluded.
+               MAX(CASE WHEN tc.tool_call_id IS NOT NULL
+                        THEN e.timestamp END) AS latest_matched_result_at,
+               MAX(CASE WHEN tc.tool_call_id IS NOT NULL
+                             AND tc.tool_internal_latency_ms >= 0
                         THEN tc.tool_internal_latency_ms/1000.0 END)
                    AS max_next_result_runner_s
         FROM base b
@@ -81,11 +87,16 @@ def main():
             FROM tool_calls tc JOIN rounds tr USING (round_pk)
         ) tc ON tc.tool_call_id=e.tool_call_id
               AND tc.session_id=b.session_id
+              AND (
+                   (b.log_format='codex_old' AND tc.round_pk=b.next_round_pk)
+                   OR
+                   (b.log_format <> 'codex_old' AND tc.round_pk=b.round_pk)
+              )
         GROUP BY b.provider,b.session_id,b.round_index
     )
     SELECT b.*, sc.source_calls, sc.max_source_runner_s,
-           sc.latest_source_result_at, nr.next_round_result_events,
-           nr.latest_next_result_at, nr.max_next_result_runner_s
+           sc.latest_source_result_at, nr.all_next_round_result_events, nr.matched_next_result_events,
+           nr.latest_matched_result_at, nr.max_next_result_runner_s
     FROM base b
     LEFT JOIN source_calls sc USING(provider,session_id,round_index)
     LEFT JOIN next_results nr USING(provider,session_id,round_index)
@@ -102,9 +113,9 @@ def main():
                  WHERE pause_s >= 0 AND max_source_runner_s > pause_s + 0.1
              ) AS source_runner_exceeds_pause_100ms,
              COUNT(*) FILTER (
-                 WHERE pause_end_at IS NOT NULL AND latest_next_result_at IS NOT NULL
-                   AND latest_next_result_at > pause_end_at
-             ) AS next_result_logged_after_pause_end,
+                 WHERE pause_end_at IS NOT NULL AND latest_matched_result_at IS NOT NULL
+                   AND latest_matched_result_at > pause_end_at
+             ) AS matched_result_logged_after_pause_end,
              ROUND(MEDIAN(pause_s),3) AS pause_p50_s,
              ROUND(MEDIAN(max_next_result_runner_s),3) AS next_result_runner_p50_s,
              ROUND(MEDIAN(max_source_runner_s),3) AS source_runner_p50_s
@@ -117,10 +128,11 @@ def main():
     examples = con.execute("""
       SELECT session_id,round_index,pause_s,
              max_next_result_runner_s,max_source_runner_s,
-             pause_start_at,pause_end_at,latest_next_result_at,
+             pause_start_at,pause_end_at,latest_matched_result_at,
              index_multiplicity
       FROM evidence
       WHERE log_format='codex_old' AND record_category='tool_wait'
+        AND index_multiplicity = 1
         AND max_next_result_runner_s > pause_s + 0.1
       ORDER BY (max_next_result_runner_s-pause_s) DESC
       LIMIT 20
