@@ -11,7 +11,7 @@ The **sole official Week 4 dataset** is [`../dataset/pause_handoff.parquet`](../
 | `build_pause_handoff.py` | Generate **one** lossless, categorized dataset from `group_work/pauses.parquet` (Version 2). |
 | `check_handoff_bias.py` | Report duration distributions and category coverage by provider, log format, and analysis track. |
 | `build_tool_dataset.py` | Independently study timestamped tool intervals, overlap unions, tool episodes, and tool/generation alignments. Exploratory and not an alternative pause ground truth. |
-| `validate_week3.py` | Independent runner-vs-wall latency comparison, overlap checks, and explicitly historical first-input round-boundary diagnostics (not Version 2 pause acceptance checks). |
+| `validate_week3.py` | Independent runner-vs-wall latency comparison, overlap checks, and historical first-input round-boundary diagnostics; obsolete Version 1 tool-attribution checks were removed (not Version 2 pause acceptance checks). |
 | `inspect_cases.py` | Reproduce historical anomalous timestamp examples. |
 | `audit_v2_pause_events.py` | Independently compare Version 2 pause lengths against matched tool-call runner durations and result-event timestamps, with a separate older-Codex discrepancy report. Diagnostic evidence; never rewrites the dataset. |
 
@@ -34,7 +34,7 @@ python "$REPO/analysis/validation/check_handoff_bias.py"
 cp group_work/pause_handoff.parquet "$REPO/analysis/dataset/pause_handoff.parquet"
 ```
 
-The generator refuses the earlier Version 1 schema and verifies that all Version 2 rows and columns are unchanged. It does **not** directly update the committed Parquet; the regenerated file must be committed and pushed locally.
+The generator refuses the earlier Version 1 schema and verifies that all Version 2 rows and columns are unchanged. The generated handoff has been regenerated and confirmed; rerun the commands only when intentionally updating the derived features.
 
 ### Data interpretation
 
@@ -68,6 +68,6 @@ The tool extraction now records `timestamp_tool_duration_s`, `runner_tool_durati
 python "$REPO/analysis/validation/audit_v2_pause_events.py"
 ```
 
-The older Codex pause duration still uses the upstream v2 timestamp convention and may be undermeasured. This audit reports potential discrepancies; it does not invent corrected pause boundaries. The official dataset is kept lossless. Run these checks on the TraceLab machine and review the old-Codex example rows before treating their pause targets as reliable. The updated scripts have not yet been runtime-validated against the local trace.
+The older Codex pause duration still uses the upstream v2 timestamp convention and may be undermeasured. This audit reports potential discrepancies; it does not invent corrected pause boundaries. The official dataset is kept lossless. Run these checks on the TraceLab machine and review the old-Codex example rows before treating their pause targets as reliable. The handoff and auxiliary tool-analysis scripts have been executed on the local trace, and the 357,161-row, 33-column unified dataset was confirmed. The latest audit query optimization still needs a timed local rerun.
 
-The official Week 4 artifact is one Parquet, regenerated with the categorized builder.
+The official Week 4 artifact is the single regenerated 357,161-row, 33-column Parquet.
