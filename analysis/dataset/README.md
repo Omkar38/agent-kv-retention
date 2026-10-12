@@ -1,31 +1,29 @@
-# Week 4 datasets — Brian v2, lossless audited handoff
+# Unified Version 2 pause dataset
 
-**Source of truth:** Brian's [Week 3 Version 2 pause extractor](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/build_pause_table.py). All v2 records and columns are preserved, including `pause_s`, `cause`, `usable`, `context_tokens`, `n_tools`, `tool_names`, `tool_input_chars`, `pause_start_at`, `pause_end_at`, and `log_format`.
+**Official dataset:** `pause_handoff.parquet` — one source-preserving dataset for Week 4 prediction and later cache-retention simulation.
 
-**Integration:** Hangting's [build_pause_handoff.py](../validation/build_pause_handoff.py) adds `qa_endpoint_duration_s`, `qa_boundary_status`, `qa_feature_origin`, `qa_tool_topology`, `evaluation_group`, `eligible_for_prediction`, masked `feature_*` columns, and deterministic `split`, without dropping Brian's columns.
+The handoff reads the Version 2 pause table from [the upstream pause extractor](https://github.com/Omkar38/agent-kv-retention/blob/Brian/week3/build_pause_table.py), preserves **every source row and every source column**, and adds independent categorical diagnostics and a deterministic session split. It does not rewrite `pause_s`, `cause`, `n_tools`, `tool_names`, `tool_input_chars`, `context_tokens`, the pause endpoints, or `log_format`.
 
-## Current and historical artifacts
+The source contains 357,161 records; the last tested Version 2 input reported 351,497 records meeting upstream timestamp/linkage criteria and 5,664 requiring other interpretations. **All 357,161 are retained here.** The inherited binary source field `usable` remains untouched solely because the original schema must not be altered. Our analysis uses the more descriptive categories below instead.
 
-| Filename | Meaning |
+## Added columns
+
+| Column | Meaning |
 |---|---|
-| `pause_handoff.parquet` **(to regenerate)** | All **357,161** Brian v2 records, including unusable and unknown causes; v2 columns unchanged, additional diagnostics |
-| `week4_pause_model.parquet` **(to regenerate)** | Every v2 record passing basic integrity and usability requirements; retains single- and multi-tool, and human waits as distinguishable groups |
-| `pauses_v2.parquet` **(legacy)** | Historical handoff generated from Brian **v1**; **not** Brian's corrected v2 |
-| `week4_pause_train.parquet` **(legacy)** | Historical 219,465-record, single-tool v1 benchmark; **not** the current Week 4 training input |
+| `record_category` | `tool_wait`, `human_wait`, `mixed_tool_human_wait`, `session_end`, `unresolved_continuation`, `other_cause` |
+| `timing_category` | `timing_consistent`, `boundary_missing`, `negative_duration`, `duration_missing`, `endpoint_disagreement`, `source_record_review` |
+| `tool_topology` | `single_tool_call`, `multiple_tool_calls`, `no_tool_call`, `tool_count_not_recorded` |
+| `feature_category` | `source_round_tool_metadata`, `source_round_no_tool`, `result_logged_tool_metadata`, `older_codex_no_tool`, `feature_availability_unknown` |
+| `analysis_track` | `tool_pause_prediction`, `human_wait_prediction`, `mixed_wait_prediction`, `old_codex_tool_timing_study`, `boundary_or_source_review`, `diagnostic_event` |
+| `endpoint_duration_s`, `qa_endpoint_duration_s` | Independent arithmetic of Version 2 supplied pause endpoints; **not** independently measured GPU idleness |
+| `feature_n_tools`, `feature_tool_names`, `feature_tool_input_chars` | Masked candidate predictor features; old Codex tool metadata is masked because decision-time visibility is uncertain |
+| `split` | Stable SHA-256 provider/session assignment: train, val, test |
 
-**Do not train on legacy Parquet artifacts or misidentify them as v2.** The new two files have not yet been run and uploaded from the user's TraceLab environment.
+**Future-information warning:** `pause_s` is the target. `record_category`, `analysis_track`, `timing_category`, `cause`, `split`, result timestamps, and QA fields are **not predictors**; several depend on outcomes. Older Codex observations stay in the dataset, with original source metadata intact, but uncertain model-input features masked. Any application-specific predictor must independently justify feature observability.
 
-## Prediction-safe feature policy
+## Rebuild the one official dataset
 
-Every Brian v2 column is preserved in both outputs for provenance, analysis, and auditing, **but this does not mean every column can be used as a predictor feature**. For initial training, use only `provider`, `feature_n_tools`, `feature_tool_names`, and `feature_tool_input_chars` (and missingness indicators if needed). `session_id` is a group identifier; `split` is a train/val/test assignment; `pause_s` is the target. `cause` and `evaluation_group` are retrospective annotations, **not** prediction features. Exclude `pause_end_at`, `qa_*`, and other future-outcome fields. Treat `context_tokens`, `model`, and `round_index` as additional features only after verifying their decision-time availability.
-
-Older Codex logs (`log_format=codex_old`) may record tool metadata at result time; the handoff **retains original Brian tool columns** but masks corresponding `feature_*` values. A v2-valid duration is not proof that every associated feature was available at decision time. Missing tool features may be imputed or old Codex evaluated separately.
-
-Both outputs use the same SHA-256, session-grouped 80/10/10 assignment preserved from the previous handoff. Split membership is deterministic and rows of the same provider/session do not cross splits.
-
-## Generate
-
-From the TraceLab repository root on Mac:
+From the Mac terminal:
 
 ```bash
 cd ~/kv-week3-work/agent-kv-retention-hangting
@@ -36,31 +34,20 @@ git fetch origin Brian
 cd ~/kv-week3-work/TraceLab
 REPO=~/kv-week3-work/agent-kv-retention-hangting
 mkdir -p our_work group_work
-
 git -C "$REPO" show origin/Brian:week3/build_pause_table.py > our_work/build_pause_table.py
 python our_work/build_pause_table.py
 cp our_work/pauses.parquet group_work/pauses.parquet
-
 python "$REPO/analysis/validation/build_pause_handoff.py"
 python "$REPO/analysis/validation/check_handoff_bias.py"
+cp group_work/pause_handoff.parquet "$REPO/analysis/dataset/pause_handoff.parquet"
 
-cp group_work/pause_handoff.parquet "$REPO/analysis/dataset/"
-cp group_work/week4_pause_model.parquet "$REPO/analysis/dataset/"
+git -C "$REPO" add analysis/dataset/pause_handoff.parquet
+git -C "$REPO" commit -m "Regenerate unified categorized Version 2 pause handoff"
+git -C "$REPO" push origin Hangting_week3
 ```
 
-Only after inspecting the builder's checks and the new file schemas, commit and push **both** files. Remove the old v1-named Parquet files only after verifying the replacement files, to avoid confusing classmates. Data is based on TraceLab release v0.0.1; cite its published license and paper.
+The already committed `pause_handoff.parquet` was produced before these new categories were added. **Regenerate and push the same filename before use.** Do not generate or commit a second model dataset.
 
-**Scientific limitation:** Brian v2 produces agent *pause-duration proxies*, not observed physical GPU KV-cache residency. The Week 4 dataset supports prediction and sensitivity analysis, not measured GPU savings.
+Week 4 subsets are made **in memory** using `analysis_track` and `split`, e.g. tool training records: `analysis_track == 'tool_pause_prediction'` and `split == 'train'`. Evaluate human and mixed waits separately. Retain boundary-review and unresolved records for data-quality analysis; not every record defines a measured duration appropriate as a supervised label.
 
-## First verified v2 integration run (2026-10-12)
-
-The user successfully regenerated Brian v2 from its current `Brian` branch and executed both integration and bias scripts on TraceLab release v0.0.1:
-
-- `pause_handoff.parquet`: **357,161** original rows, **15 Brian v2 source columns all preserved** plus supplementary QA/splits.
-- `week4_pause_model.parquet`: **351,497** originally usable and internally consistent duration rows, consisting of **136,560 Claude** and **214,937 Codex** observations. No originally usable rows failed the additional endpoint check in this run.
-- Cause groups: tool **314,589**; user **33,374**; mixed tool/user **3,534**. Both multi-tool and human groups remain available for separate analysis, without asserting that human cause is a decision-time feature.
-- Endpoint QA: Claude **137,536** internally consistent, **2,771** missing boundaries, **31** negative boundaries; Codex **214,937** consistent, **1,886** missing boundaries. These are comparisons with the v2 endpoints used to define each pause, not independent measurements of cache residency.
-- `codex_old` has **14,130** usable rows (including **12,099 tool pauses**); all three new `feature_*` tool attributes are masked there. Original source columns are preserved without masking.
-- **Open concern:** usable `codex_old` tool pauses have median **0.012 s** (p90 **0.586 s**), versus newer Codex median **0.385 s** (p90 **10.357 s**). The older-format timestamps may make the estimated inter-round pause too short relative to real tool execution. Retain these records, but **stratify by `log_format` and audit old-format timing before interpreting old-Codex retention results**.
-
-The script execution **does not upload these new Parquet files to GitHub**. Copy the files from `TraceLab/group_work/` into `analysis/dataset/` and push before describing them as repository artifacts. Do not train on the legacy v1 files.
+**Limits:** These are TraceLab inter-round pause estimates rather than observed GPU cache-residency intervals. Cite the [TraceLab release](https://github.com/uw-syfi/TraceLab) and note old Codex time-logging limitations.
