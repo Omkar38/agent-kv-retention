@@ -72,7 +72,7 @@ def check_interval_consistency():
     
     DATA = "group_work/tool_intervals.parquet"
     
-    print("\n=== 1. Timestamp consistency ===")
+    print("\n=== 1. Independent runner-vs-timestamp latency comparison ===")
     
     result = con.execute("""
     SELECT
@@ -80,25 +80,25 @@ def check_interval_consistency():
         COUNT(*) AS compared_calls,
         ROUND(
             AVG(ABS(
-                tool_duration_s -
-                reported_tool_duration_s
+                timestamp_tool_duration_s -
+                runner_tool_duration_s
             )), 6
         ) AS mean_difference_s,
         ROUND(
             QUANTILE_CONT(ABS(
-                tool_duration_s -
-                reported_tool_duration_s
+                timestamp_tool_duration_s -
+                runner_tool_duration_s
             ), 0.99), 6
         ) AS p99_difference_s,
         COUNT(*) FILTER (
             WHERE ABS(
-                tool_duration_s -
-                reported_tool_duration_s
+                timestamp_tool_duration_s -
+                runner_tool_duration_s
             ) > 0.1
         ) AS differences_over_100ms
     FROM read_parquet(?)
-    WHERE timing_status = 'valid'
-      AND reported_tool_duration_s IS NOT NULL
+    WHERE tool_start_ts IS NOT NULL AND tool_end_ts IS NOT NULL
+      AND runner_tool_duration_s IS NOT NULL
     GROUP BY provider
     ORDER BY provider
     """, [DATA]).df()
@@ -392,7 +392,7 @@ def check_prior_pause_feature_timing():
 
 
 def audit_round_boundaries():
-    """Audit round-to-round timestamp proxies; not a GPU cache-idle measurement."""
+    """Historical first-input ordering diagnostic only; use v2 handoff for pause boundaries."""
     import duckdb
 
     database = "trace/syfi_coding_trace.duckdb"
@@ -467,7 +467,7 @@ def audit_round_boundaries():
             WHEN next_round_pk IS NULL THEN 'session_end'
             WHEN estimated_stop_ts IS NULL THEN 'stop_proxy_missing'
             WHEN next_first_input_ts IS NULL THEN 'next_input_missing'
-            WHEN next_first_input_ts < estimated_stop_ts THEN 'negative_gap'
+            WHEN next_first_input_ts < estimated_stop_ts THEN 'historical_first_input_before_stop_not_a_pause_error'
             WHEN next_first_generation_signal_ts < next_first_input_ts
                 THEN 'next_generation_before_input'
             WHEN next_tool_result_after_generation
@@ -491,7 +491,7 @@ def audit_round_boundaries():
         GROUP BY provider, boundary_status
         ORDER BY provider, round_transitions DESC
     """, [output]).df()
-    print("\n=== Boundary proxy coverage by provider ===")
+    print("\n=== Historical first-input diagnostic (NOT v2 pause validity) ===")
     print(summary.to_string(index=False))
 
     inversions = con.execute("""
