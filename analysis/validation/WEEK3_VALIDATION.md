@@ -1,3 +1,5 @@
+> **Historical Version 1 validation record:** This document reports initial analyses, not the final Version 2 handoff. The sole current dataset is [`../dataset/pause_handoff.parquet`](../dataset/pause_handoff.parquet); new record and timing categories supersede binary screening for Week 4.
+
 # Week 3 TraceLab Validation — Findings and Limitations
 
 **Project:** Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents
@@ -23,7 +25,7 @@ The team's original round-gap analysis was reproduced. Its tool attribution is n
 
 The audit found **531 negative-duration** round-gap records. A separate check found **514 duplicate `(session_id, round_index)` groups** in **16 sessions**, covering 1,028 round records. These checks do not, by themselves, fully reconcile all exclusion reasons or establish a correction to the round-ordering logic. Negative gaps should not be converted to positive values or silently repaired.
 
-Brian's original duration distributions and figures were reproduced, but they are **preliminary** for the final KV-cache idle-time evaluation because the source attribution and endpoint definitions require revision.
+The original original duration distributions and figures were reproduced, but they are **preliminary** for the final KV-cache idle-time evaluation because the source attribution and endpoint definitions require revision.
 
 ## 2. Decision-time leakage and Codex round structure
 
@@ -98,7 +100,7 @@ Do **not** train on `observed_n_calls`, `observed_n_rounds`, `observed_tool_name
 
 - `analysis/trace_facts/check_tool_latency.py`: fixed a mismatch between SQL output ordering and printed percentile columns; the corrected local run reported expected mean/P50/P90/P95/P99/P99.9 columns.
 - `analysis/trace_facts/check_prediction_fields.py`: replaced references to unavailable tool-call columns with fields present in the released schema. Review its output and retain only features available at the policy's decision point.
-- Brian's original pause extraction and figures were independently reproduced, not replaced or overwritten. Preserve attribution and the original team branches.
+- The original original pause extraction and figures were independently reproduced, not replaced or overwritten. Preserve attribution and the original team branches.
 
 ## 8. Open issues and handoff
 
