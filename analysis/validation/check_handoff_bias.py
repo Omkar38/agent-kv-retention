@@ -1,58 +1,50 @@
 #!/usr/bin/env python3
-"""Summarize coverage, tails, and cause/format differences in Brian v2 handoff."""
+"""Analyze the complete categorized Version 2 handoff without dropping rows."""
 import argparse
 from pathlib import Path
 import duckdb
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--trace-root", type=Path, default=Path.cwd())
-    parser.add_argument("--handoff", type=Path, default=Path("group_work/pause_handoff.parquet"))
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--trace-root", type=Path, default=Path.cwd())
+    ap.add_argument("--handoff", type=Path, default=Path("group_work/pause_handoff.parquet"))
+    args = ap.parse_args()
     root = args.trace_root.expanduser().resolve()
-    path = args.handoff if args.handoff.is_absolute() else root / args.handoff
-    if not path.exists():
-        parser.error(f"Missing {path}; run build_pause_handoff.py on Brian v2 first.")
+    file = args.handoff if args.handoff.is_absolute() else root / args.handoff
+    if not file.is_file():
+        ap.error(f"Missing {file}; run build_pause_handoff.py first.")
     db = duckdb.connect()
-    db.execute("CREATE TEMP VIEW pauses AS SELECT * FROM read_parquet(\'" + str(path).replace("\'", "\'\'") + "\')")
-    print("\n=== Original v2 records retained by provider, log format, and cause ===")
+    src = "'" + str(file).replace("'", "''") + "'"
+    db.execute(f"CREATE TEMP VIEW p AS SELECT * FROM read_parquet({src})")
+    print("\n=== All records: category, log format, and timing ===")
     print(db.execute("""
-        SELECT provider, log_format, cause, COUNT(*) AS all_records,
-               COUNT(*) FILTER (WHERE eligible_for_prediction) AS eligible_records,
-               ROUND(100.0*COUNT(*) FILTER (WHERE eligible_for_prediction)/COUNT(*), 2)
-                   AS eligible_pct
-        FROM pauses GROUP BY provider, log_format, cause
-        ORDER BY provider, log_format, all_records DESC
+      SELECT provider, log_format, record_category, timing_category,
+             COUNT(*) AS records
+      FROM p GROUP BY ALL ORDER BY provider, log_format, records DESC
     """).df().to_string(index=False))
-    print("\n=== Usable pause duration by log format and cause ===")
+    print("\n=== Duration distributions by analysis track ===")
     print(db.execute("""
-        SELECT provider, log_format, cause, COUNT(*) AS rows,
-               ROUND(MEDIAN(pause_s), 3) AS p50_s,
-               ROUND(QUANTILE_CONT(pause_s, 0.90), 3) AS p90_s,
-               ROUND(QUANTILE_CONT(pause_s, 0.99), 3) AS p99_s,
-               ROUND(100.0*COUNT(*) FILTER (WHERE pause_s > 10)/COUNT(*), 2)
-                   AS pct_gt_10s,
-               ROUND(100.0*COUNT(*) FILTER (WHERE pause_s > 60)/COUNT(*), 2)
-                   AS pct_gt_60s
-        FROM pauses WHERE eligible_for_prediction
-        GROUP BY provider, log_format, cause
-        ORDER BY provider, log_format, rows DESC
+      SELECT provider, log_format, analysis_track, COUNT(*) AS records,
+             ROUND(MEDIAN(pause_s), 3) AS p50_s,
+             ROUND(QUANTILE_CONT(pause_s, 0.90), 3) AS p90_s,
+             ROUND(QUANTILE_CONT(pause_s, 0.99), 3) AS p99_s,
+             ROUND(100.0*COUNT(*) FILTER (WHERE pause_s > 10)
+                   / NULLIF(COUNT(pause_s),0),2) AS pct_gt_10s,
+             ROUND(100.0*COUNT(*) FILTER (WHERE pause_s > 60)
+                   / NULLIF(COUNT(pause_s),0),2) AS pct_gt_60s
+      FROM p GROUP BY ALL ORDER BY provider, log_format, records DESC
     """).df().to_string(index=False))
-    print("\n=== Single and multi-tool coverage ===")
+    print("\n=== Parallel/multi-tool topology and feature origin ===")
     print(db.execute("""
-        SELECT provider, log_format, qa_tool_topology,
-               COUNT(*) AS original_rows,
-               COUNT(*) FILTER (WHERE eligible_for_prediction) AS eligible_rows
-        FROM pauses GROUP BY provider, log_format, qa_tool_topology
-        ORDER BY provider, log_format, original_rows DESC
+      SELECT provider, log_format, analysis_track, tool_topology,
+             feature_category, COUNT(*) AS records
+      FROM p GROUP BY ALL ORDER BY records DESC
     """).df().to_string(index=False))
-    print("\n=== Exclusion reasons for originally usable rows ===")
+    print("\n=== Total records and train/validation/test ===")
     print(db.execute("""
-        SELECT provider, log_format, qa_boundary_status,
-               COUNT(*) AS excluded_rows
-        FROM pauses WHERE usable AND NOT eligible_for_prediction
-        GROUP BY provider, log_format, qa_boundary_status
-        ORDER BY excluded_rows DESC
+      SELECT split, COUNT(*) AS records,
+             COUNT(DISTINCT session_id) AS sessions
+      FROM p GROUP BY split ORDER BY split
     """).df().to_string(index=False))
     db.close()
 
