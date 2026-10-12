@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build ONE lossless, categorized Week 4 handoff from TraceLab pause Version 2.
+"""Build ONE lossless, feature-engineered Week 4 dataset from TraceLab pause Version 2.
 
 Preserves ALL source rows and ALL 15 source columns unchanged (including the
 legacy source field named 'usable', which is retained only for provenance).
-Categorical fields replace a binary valid/invalid interpretation.
+Preserve categorical context and add decision-time candidate features and
+separate offline target transformations for Week 4 regression/classification.
 
 Output: group_work/pause_handoff.parquet. No second filtered parquet.
 Usage: from TraceLab root, after obtaining Brian v2 as group_work/pauses.parquet:
@@ -78,10 +79,10 @@ def main():
     if extras:
         raise ValueError("Pass unmodified Version 2, not a previous handoff: " + str(extras))
 
-    # The source 'usable' flag is NEVER removed/changed. It is consulted only
-    # to distinguish source-round/metadata review from coherent records.
-    # An event's cause is known after it finishes, so record_category is an
-    # OFFLINE label, not an available prediction input.
+    # No original field is removed or modified. Keep provenance diagnostics
+    # but do not use the legacy source eligibility flag to discard records.
+    # Retrospective pause cause and duration-derived labels are never inputs
+    # to an online retention predictor.
     con.execute("""
     CREATE TEMP TABLE categorized AS
     WITH basic AS (
@@ -127,12 +128,8 @@ def main():
         FROM source_pause b
     )
     SELECT basic.*,
-           endpoint_duration_s AS qa_endpoint_duration_s,
            CASE
              WHEN timing_category <> 'timing_consistent' THEN 'boundary_or_source_review'
-             WHEN record_category = 'tool_wait'
-                  AND feature_category = 'result_logged_tool_metadata'
-                  THEN 'old_codex_tool_timing_study'
              WHEN record_category = 'tool_wait' THEN 'tool_pause_prediction'
              WHEN record_category = 'human_wait' THEN 'human_wait_prediction'
              WHEN record_category = 'mixed_tool_human_wait'
@@ -145,7 +142,31 @@ def main():
            CASE WHEN feature_category = 'source_round_tool_metadata'
                 THEN tool_names ELSE NULL END AS feature_tool_names,
            CASE WHEN feature_category = 'source_round_tool_metadata'
-                THEN tool_input_chars ELSE NULL END AS feature_tool_input_chars
+                THEN tool_input_chars ELSE NULL END AS feature_tool_input_chars,
+           -- Numeric features derived only from original decision-time
+           -- candidate fields. Negative/absent values remain NULL.
+           CASE WHEN context_tokens >= 0
+                THEN LN(1.0 + context_tokens) END AS feature_log1p_context_tokens,
+           CASE WHEN round_index >= 0
+                THEN LN(1.0 + round_index) END AS feature_log1p_round_index,
+           CASE WHEN feature_category = 'source_round_tool_metadata'
+                     AND tool_input_chars >= 0
+                THEN LN(1.0 + tool_input_chars)
+           END AS feature_log1p_tool_input_chars,
+           CASE WHEN feature_category IN (
+                      'source_round_tool_metadata','source_round_no_tool'
+                    ) THEN n_tools > 0 END AS feature_has_tools,
+           CASE WHEN feature_category IN (
+                      'source_round_tool_metadata','source_round_no_tool'
+                    ) THEN n_tools > 1 END AS feature_multiple_tools,
+           -- Offline target transforms/labels for evaluation only:
+           -- NEVER include target_* or label_* in model features.
+           CASE WHEN pause_s >= 0
+                THEN LN(1.0 + pause_s) END AS target_log1p_pause_s,
+           CASE WHEN pause_s >= 0
+                THEN pause_s > 10 END AS label_pause_gt_10s,
+           CASE WHEN pause_s >= 0
+                THEN pause_s > 60 END AS label_pause_gt_60s
     FROM basic
     """)
 
@@ -239,9 +260,10 @@ def main():
        SELECT split, COUNT(*) AS rows, COUNT(DISTINCT session_id) AS sessions
        FROM handoff GROUP BY split ORDER BY split
     """).df().to_string(index=False))
-    print("\nIMPORTANT: cause/record_category/analysis_track/timing_category/split,"
-          "\n pause_s/endpoints, and all QA fields are NOT online prediction features."
-          "\n The original Version 2 'usable' source column remains for provenance only."
+    print("\nIMPORTANT: model inputs must exclude pause_s, target_*, label_*,"
+          "\n cause/record_category/analysis_track/timing_category/split,"
+          "\n session/user identifiers, and outcome timestamps."
+          "\n The original Version 2 source schema remains unchanged."
           "\n No GPU KV-cache residency is measured.")
     con.close()
 
