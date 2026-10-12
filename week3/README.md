@@ -69,11 +69,11 @@ uv sync
 curl.exe -L --fail --ssl-no-revoke -o trace\syfi_coding_trace.duckdb https://github.com/uw-syfi/TraceLab/releases/download/v0.0.1/syfi_coding_trace.duckdb
 ```
 
-**3. Copy these scripts into TraceLab.**
+**3. Copy these scripts into TraceLab** (they are in the `week3` folder on the `Brian` branch).
 
 ```powershell
 mkdir our_work
-Copy-Item <path-to-our-repo>\analysis\pauses\*.py our_work\
+Copy-Item <path-to-our-repo>\week3\*.py our_work\
 ```
 
 **4. Run them from the TraceLab folder, in this order.**
