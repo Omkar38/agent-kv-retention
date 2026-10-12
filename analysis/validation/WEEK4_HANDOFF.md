@@ -52,3 +52,16 @@ Additional reproduction and upload instructions: [`../dataset/README.md`](../dat
 The handoff reports total-row preservation, original-column preservation, v2 endpoint arithmetic checks, log-format and cause distribution, tool topology, and stable session-level splits. The bias script computes P50/P90/P99 and fractions over 10 and 60 seconds **separately by provider, log format and original cause**; no comparisons against contaminated v1 durations.
 
 **Important:** Internal endpoint arithmetic is necessary but not independent validation of inference timestamps. `pause_s` is a TraceLab proxy, not observed GPU cache-idle residency; `cause` is only known retrospectively. Training and evaluation should stratify by cause and log format, while the online policy cannot condition on future cause information.
+
+## First verified v2 integration run (2026-10-12)
+
+The user successfully regenerated Brian v2 from its current `Brian` branch and executed both integration and bias scripts on TraceLab release v0.0.1:
+
+- `pause_handoff.parquet`: **357,161** original rows, **15 Brian v2 source columns all preserved** plus supplementary QA/splits.
+- `week4_pause_model.parquet`: **351,497** originally usable and internally consistent duration rows, consisting of **136,560 Claude** and **214,937 Codex** observations. No originally usable rows failed the additional endpoint check in this run.
+- Cause groups: tool **314,589**; user **33,374**; mixed tool/user **3,534**. Both multi-tool and human groups remain available for separate analysis, without asserting that human cause is a decision-time feature.
+- Endpoint QA: Claude **137,536** internally consistent, **2,771** missing boundaries, **31** negative boundaries; Codex **214,937** consistent, **1,886** missing boundaries. These are comparisons with the v2 endpoints used to define each pause, not independent measurements of cache residency.
+- `codex_old` has **14,130** usable rows (including **12,099 tool pauses**); all three new `feature_*` tool attributes are masked there. Original source columns are preserved without masking.
+- **Open concern:** usable `codex_old` tool pauses have median **0.012 s** (p90 **0.586 s**), versus newer Codex median **0.385 s** (p90 **10.357 s**). The older-format timestamps may make the estimated inter-round pause too short relative to real tool execution. Retain these records, but **stratify by `log_format` and audit old-format timing before interpreting old-Codex retention results**.
+
+The script execution **does not upload these new Parquet files to GitHub**. Copy the files from `TraceLab/group_work/` into `analysis/dataset/` and push before describing them as repository artifacts. Do not train on the legacy v1 files.
