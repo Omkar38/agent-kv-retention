@@ -34,12 +34,31 @@ def extract_tool_intervals():
             tc.emitted_at AS tool_start_ts,
             tc.result_at AS tool_end_ts,
     
-            EPOCH(
-                tc.result_at - tc.emitted_at
+            EPOCH(tc.result_at - tc.emitted_at) AS timestamp_tool_duration_s,
+
+            CASE WHEN tc.tool_internal_latency_ms >= 0
+                 THEN tc.tool_internal_latency_ms / 1000.0 END
+                 AS runner_tool_duration_s,
+
+            -- Runner execution time when recorded; wall-time otherwise.
+            COALESCE(
+                CASE WHEN tc.tool_internal_latency_ms >= 0
+                     THEN tc.tool_internal_latency_ms / 1000.0 END,
+                CASE WHEN tc.tool_wall_latency_ms >= 0
+                     THEN tc.tool_wall_latency_ms / 1000.0 END,
+                CASE WHEN tc.result_at >= tc.emitted_at
+                     THEN EPOCH(tc.result_at - tc.emitted_at) END
             ) AS tool_duration_s,
-    
+
             tc.tool_wall_latency_ms / 1000.0
                 AS reported_tool_duration_s,
+
+            CASE
+                WHEN tc.tool_internal_latency_ms >= 0 THEN 'runner_internal'
+                WHEN tc.tool_wall_latency_ms >= 0 THEN 'timestamp_wall'
+                WHEN tc.result_at >= tc.emitted_at THEN 'timestamp_interval'
+                ELSE 'duration_missing'
+            END AS duration_source,
     
             CASE
                 WHEN tc.emitted_at IS NULL
@@ -47,6 +66,11 @@ def extract_tool_intervals():
                     THEN 'missing_timestamp'
                 WHEN tc.result_at < tc.emitted_at
                     THEN 'negative_duration'
+                -- Wall timestamps alone cannot locate legacy Codex tool starts.
+                WHEN r.provider = 'codex'
+                  AND tc.tool_wall_latency_ms <= 5
+                  AND tc.tool_internal_latency_ms > 100
+                    THEN 'collapsed_timestamp_vs_runner'
                 ELSE 'valid'
             END AS timing_status
     
