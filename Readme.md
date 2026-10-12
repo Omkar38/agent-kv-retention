@@ -1,5 +1,7 @@
 # agent-kv-retention
 
+> **Week 4 update (2026-10-12):** Brian's corrected **Version 2** pause table is now the active source. The original v1-derived files `pauses_v2.parquet` and `week4_pause_train.parquet` are historical; regenerate `pause_handoff.parquet` and `week4_pause_model.parquet` before training. See [Week 4 handoff](analysis/validation/WEEK4_HANDOFF.md) and [dataset README](analysis/dataset/README.md).
+
 **Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents**
 
 How should an LLM serving system spend its GPU memory across many concurrent agent sessions that keep pausing for tool calls?
