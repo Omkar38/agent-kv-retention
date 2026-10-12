@@ -1,6 +1,6 @@
 # agent-kv-retention
 
-> **Week 4 update (2026-10-12):** Brian's corrected **Version 2** pause table is now the active source. The original v1-derived files `pauses_v2.parquet` and `week4_pause_train.parquet` are historical; regenerate `pause_handoff.parquet` and `week4_pause_model.parquet` before training. See [Week 4 handoff](analysis/validation/WEEK4_HANDOFF.md) and [dataset README](analysis/dataset/README.md).
+> **Week 4 dataset:** Use only `analysis/dataset/pause_handoff.parquet`, the Version 2 all-row categorized handoff. Regenerate it with `analysis/validation/build_pause_handoff.py` after updating the code. The older filtered and historical Parquet files were deleted. See [the dataset guide](analysis/dataset/README.md).
 
 **Learning-Augmented KV-Cache Retention for Tool-Using LLM Agents**
 
@@ -10,7 +10,7 @@ How should an LLM serving system spend its GPU memory across many concurrent age
 
 ## Week 3 analysis — start here
 
-For the complete branch-wide script guide, purpose, data provenance, execution commands, dataset feature/label rules, and the Weeks 4–10 handoff, see **[Week 3 README](analysis/validation/README.md)**. The [Week 3 validation report](analysis/validation/WEEK3_VALIDATION.md) records reproduced statistics and the Codex round-attribution issue. The branch contains `analysis/trace_facts/` latency reports and `analysis/validation/` overlap-aware candidate extraction plus QA. Brian's [original Week 3 analysis](https://github.com/Omkar38/agent-kv-retention/tree/Brian/week3) is linked rather than duplicated.
+For the complete branch-wide script guide, purpose, data provenance, execution commands, dataset feature/label rules, and the Weeks 4–10 handoff, see **[Week 3 README](analysis/validation/README.md)**. The [Week 3 validation report](analysis/validation/WEEK3_VALIDATION.md) records reproduced statistics and the Codex round-attribution issue. The branch contains `analysis/trace_facts/` latency reports and `analysis/validation/` overlap-aware candidate extraction plus QA. The upstream Version 2 pause extraction is preserved in the unified handoff.
 
 ---
 
@@ -128,12 +128,11 @@ Group 9 — CSE 542 / AMS 560, Stony Brook University, Fall 2026
 
 | Member | Owns |
 |---|---|
-| Hangting Lu | Formal cost model, retention policy design |
-| Omkar Lashkare | Prediction, calibration, evaluation methodology |
-| Brian Park | Trace processing, workload characterization |
-| Zijie Shen | Simulator, baseline policies, offline optimum |
-| David Mei | Hardware calibration, experiment harness, reproducibility |
-
+| Workstream | Formal cost model, retention policy design |
+| Workstream | Prediction, calibration, evaluation methodology |
+| Workstream | Trace processing, workload characterization |
+| Workstream | Simulator, baseline policies, offline optimum |
+| Workstream | Hardware calibration, experiment harness, reproducibility |
 ## Key references
 
 | | |
