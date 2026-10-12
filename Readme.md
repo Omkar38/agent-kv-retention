@@ -122,17 +122,11 @@ pip install -r requirements.txt
 
 *Run instructions will land with the simulator in Week 6.*
 
-## Team
+## Project workstreams
 
 Group 9 — CSE 542 / AMS 560, Stony Brook University, Fall 2026
 
-| Member | Owns |
-|---|---|
-| Workstream | Formal cost model, retention policy design |
-| Workstream | Prediction, calibration, evaluation methodology |
-| Workstream | Trace processing, workload characterization |
-| Workstream | Simulator, baseline policies, offline optimum |
-| Workstream | Hardware calibration, experiment harness, reproducibility |
+The workstreams cover formal cost modeling and policy design; duration prediction and error analysis; trace processing and data validation; simulation and baseline comparison; and experimental reproducibility.
 ## Key references
 
 | | |
