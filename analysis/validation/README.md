@@ -68,6 +68,6 @@ The tool extraction now records `timestamp_tool_duration_s`, `runner_tool_durati
 python "$REPO/analysis/validation/audit_v2_pause_events.py"
 ```
 
-The older Codex pause duration still uses the upstream v2 timestamp convention and may be undermeasured. This audit reports potential discrepancies; it does not invent corrected pause boundaries. The official dataset is kept lossless. Run these checks on the TraceLab machine and review the old-Codex example rows before treating their pause targets as reliable. The handoff and auxiliary tool-analysis scripts have been executed on the local trace, and the 357,161-row, 33-column unified dataset was confirmed. The latest audit query optimization still needs a timed local rerun.
+The older Codex pause duration still uses the upstream v2 timestamp convention and may be undermeasured. This audit reports potential discrepancies; it does not invent corrected pause boundaries. The official dataset is kept lossless. Run these checks on the TraceLab machine and review the old-Codex example rows before treating their pause targets as reliable. The handoff and auxiliary tool-analysis scripts have been executed on the local trace, and the 357,161-row, 33-column unified dataset was confirmed. The optimized Version 2 event audit was subsequently rerun on the local trace and completed in 1.438 seconds; its results are diagnostic, not a replacement for the original pause targets.
 
 The official Week 4 artifact is the single regenerated 357,161-row, 33-column Parquet.
