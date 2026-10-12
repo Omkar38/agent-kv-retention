@@ -1,4 +1,4 @@
-"""Plot 3: how big are the idle caches, and what does that make b?
+"""Step 4, plot 3: how big are the idle caches, and what does that make b?
 
 On the formula sheet, the break-even time is b = prefill time + queueing delay.
 Prefill time grows with context length, so every pause gets its own b.

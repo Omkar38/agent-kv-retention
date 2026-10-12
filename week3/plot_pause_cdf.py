@@ -1,4 +1,4 @@
-"""Plot 1: how long do pauses last, and how many beat the break-even time?
+"""Step 4, plot 1: how long do pauses last, and how many beat the break-even time?
 
 Reads our_work/pauses.parquet and writes our_work/fig_pause_cdf.png.
 """
