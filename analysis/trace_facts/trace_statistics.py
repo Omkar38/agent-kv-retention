@@ -25,31 +25,31 @@ def tool_latency():
     SELECT
         tool_name,
         COUNT(*) AS calls,
-        ROUND(AVG(tool_wall_latency_ms) / 1000.0, 3) AS mean_seconds,
-        ROUND(MEDIAN(tool_wall_latency_ms) / 1000.0, 3) AS median_seconds,
+        ROUND(AVG(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END)) / 1000.0, 3) AS mean_seconds,
+        ROUND(MEDIAN(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END)) / 1000.0, 3) AS median_seconds,
     
         ROUND(
-            quantile_cont(tool_wall_latency_ms, 0.50) / 1000.0,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END), 0.50) / 1000.0,
             3
         ) AS p50_seconds,
     
         ROUND(
-            quantile_cont(tool_wall_latency_ms, 0.90) / 1000.0,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END), 0.90) / 1000.0,
             3
         ) AS p90_seconds,
     
         ROUND(
-            quantile_cont(tool_wall_latency_ms, 0.95) / 1000.0,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END), 0.95) / 1000.0,
             3
         ) AS p95_seconds,
     
         ROUND(
-            quantile_cont(tool_wall_latency_ms, 0.99) / 1000.0,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END), 0.99) / 1000.0,
             3
         ) AS p99_seconds,
     
         ROUND(
-            quantile_cont(tool_wall_latency_ms, 0.999) / 1000.0,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END), 0.999) / 1000.0,
             3
         ) AS p999_seconds
     
@@ -63,8 +63,8 @@ def tool_latency():
         'shell_command'
     )
     
-    AND tool_wall_latency_ms IS NOT NULL
-    AND tool_wall_latency_ms >= 0
+    AND COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) IS NOT NULL
+    AND COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) >= 0
     
     GROUP BY tool_name
     
@@ -122,11 +122,11 @@ def session_latency():
     # ------------------------------------------------------------
     # SESSION-LEVEL TOOL LATENCY
     #
-    # For now, we use tool_wall_latency_ms:
+    # Effective duration uses internal runner latency when available; wall fallback:
     #
-    #     result_at - emitted_at
+    #     tool_internal_latency_ms first; otherwise result_at - emitted_at
     #
-    # This measures the observed wall-clock latency of individual
+    # This is a runner-first execution-duration estimate for individual
     # tool calls.
     #
     # We keep Claude and Codex separate because their tool
@@ -139,13 +139,13 @@ def session_latency():
             r.provider,
             r.session_id,
             tc.tool_name,
-            tc.tool_wall_latency_ms / 1000.0 AS latency_seconds
+            COALESCE(CASE WHEN tc.tool_internal_latency_ms >= 0 THEN tc.tool_internal_latency_ms END, CASE WHEN tc.tool_wall_latency_ms >= 0 THEN tc.tool_wall_latency_ms END) / 1000.0 AS latency_seconds
         FROM tool_calls AS tc
         JOIN rounds AS r
             USING (round_pk)
     
-        WHERE tc.tool_wall_latency_ms IS NOT NULL
-          AND tc.tool_wall_latency_ms >= 0
+        WHERE COALESCE(CASE WHEN tc.tool_internal_latency_ms >= 0 THEN tc.tool_internal_latency_ms END, CASE WHEN tc.tool_wall_latency_ms >= 0 THEN tc.tool_wall_latency_ms END) IS NOT NULL
+          AND COALESCE(CASE WHEN tc.tool_internal_latency_ms >= 0 THEN tc.tool_internal_latency_ms END, CASE WHEN tc.tool_wall_latency_ms >= 0 THEN tc.tool_wall_latency_ms END) >= 0
     ),
     
     session_stats AS (
@@ -361,37 +361,37 @@ def tool_thresholds():
         query = """
         SELECT
             COUNT(*) AS calls,
-            COUNT(tool_wall_latency_ms) AS valid_calls,
+            COUNT(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END)) AS valid_calls,
     
-            quantile_cont(tool_wall_latency_ms / 1000.0, 0.50) AS median,
-            quantile_cont(tool_wall_latency_ms / 1000.0, 0.90) AS p90,
-            quantile_cont(tool_wall_latency_ms / 1000.0, 0.95) AS p95,
-            quantile_cont(tool_wall_latency_ms / 1000.0, 0.99) AS p99,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) / 1000.0, 0.50) AS median,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) / 1000.0, 0.90) AS p90,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) / 1000.0, 0.95) AS p95,
+            quantile_cont(COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) / 1000.0, 0.99) AS p99,
     
             100.0 * AVG(
-                CASE WHEN tool_wall_latency_ms > 5000
+                CASE WHEN COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) > 5000
                 THEN 1 ELSE 0 END
             ) AS pct_gt_5s,
     
             100.0 * AVG(
-                CASE WHEN tool_wall_latency_ms > 10000
+                CASE WHEN COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) > 10000
                 THEN 1 ELSE 0 END
             ) AS pct_gt_10s,
     
             100.0 * AVG(
-                CASE WHEN tool_wall_latency_ms > 30000
+                CASE WHEN COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) > 30000
                 THEN 1 ELSE 0 END
             ) AS pct_gt_30s,
     
             100.0 * AVG(
-                CASE WHEN tool_wall_latency_ms > 60000
+                CASE WHEN COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) > 60000
                 THEN 1 ELSE 0 END
             ) AS pct_gt_60s
     
         FROM tool_calls
         WHERE tool_name = ?
-          AND tool_wall_latency_ms IS NOT NULL
-          AND tool_wall_latency_ms >= 0
+          AND COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) IS NOT NULL
+          AND COALESCE(CASE WHEN tool_internal_latency_ms >= 0 THEN tool_internal_latency_ms END, CASE WHEN tool_wall_latency_ms >= 0 THEN tool_wall_latency_ms END) >= 0
         """
     
         row = con.execute(query, [tool]).fetchone()
