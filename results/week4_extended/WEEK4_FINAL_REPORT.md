@@ -31,7 +31,7 @@
 ## Reproduction and Week 6 handoff
 
 - Dataset SHA256: 2c0d0f2cd825073dce3f03392a3b30497cad4f209539262c35a4a4e02cbf1d5c
-- Test prediction SHA256: e8485fcb392e41f2ae646d31e79880839013ee848343d0592d432b3e3c78f1ee
+- Test prediction SHA256: 29241b7ba55ffc7f096d38e5eaf6f064a34f6d91574c437b02c79363191ac6bc
 - Seed 560; resamples 2000; training cap 80000; boosting iterations 75.
 - Keep local test predictions and the train-only duration/CDF reference for the later matched-trace, matched-capacity Continuum experiment.
 - Week 6 establishes a simplified single-request consistency/robustness theorem; load-sensitive multi-request behavior is a simulation extension.
