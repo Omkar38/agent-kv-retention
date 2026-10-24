@@ -31,14 +31,25 @@ jobs:
         run: python week4_handoff.py --input analysis/dataset/pause_handoff.parquet --output-dir results/week4_handoff --seed 560 --max-train 80000 --iterations 75 --break-even-s 1.0
       - name: Compute extended held-out diagnostics and full research report
         run: python -m week4.extended_analysis --dataset analysis/dataset/pause_handoff.parquet --predictions results/week4_handoff/predictions_test.csv --out results/week4_extended --seed 560 --bootstrap 2000 --max-train 80000 --iterations 75
-      - name: Commit aggregate research results (no raw prediction exports)
+      - name: Commit aggregate results if branch has not advanced
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add results/week4_extended/
-          if ! git diff --cached --quiet; then
-            git commit -m "Add Week 4 extended real-trace analysis and report"
-            git push origin HEAD:Hangting_week4
+          if git diff --cached --quiet; then
+            echo "Aggregate results already match checked-out commit."
+            exit 0
+          fi
+          # Do not overwrite or rebase over concurrent human/team commits.
+          # All generated results are still preserved in the artifact below.
+          git fetch origin Hangting_week4
+          if [ "$(git rev-parse FETCH_HEAD)" != "$(git rev-parse HEAD)" ]; then
+            echo "::warning::Branch advanced during analysis; skipping auto-push. Download the aggregate artifact if the latest branch does not already contain the results."
+            exit 0
+          fi
+          git commit -m "Add Week 4 extended real-trace analysis and report"
+          if ! git push origin HEAD:Hangting_week4; then
+            echo "::warning::Another update raced with the results push; results remain in the workflow artifact."
           fi
       - name: Archive only aggregate research outputs
         if: always()
