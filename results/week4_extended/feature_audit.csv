@@ -1,0 +1,17 @@
+split,provider,log_format,feature_category,tool_topology,n,interpretation
+test,claude,claude,source_round_tool_metadata,multiple_tool_calls,1408,candidate metadata: exact decision-time availability not verified
+test,claude,claude,source_round_tool_metadata,single_tool_call,12491,candidate metadata: exact decision-time availability not verified
+test,codex,codex,source_round_tool_metadata,multiple_tool_calls,7797,candidate metadata: exact decision-time availability not verified
+test,codex,codex,source_round_tool_metadata,single_tool_call,24917,candidate metadata: exact decision-time availability not verified
+test,codex,codex_old,result_logged_tool_metadata,single_tool_call,1160,tool metadata masked: may appear at result time
+train,claude,claude,source_round_tool_metadata,multiple_tool_calls,9415,candidate metadata: exact decision-time availability not verified
+train,claude,claude,source_round_tool_metadata,single_tool_call,83635,candidate metadata: exact decision-time availability not verified
+train,codex,codex,source_round_tool_metadata,multiple_tool_calls,34460,candidate metadata: exact decision-time availability not verified
+train,codex,codex,source_round_tool_metadata,single_tool_call,103868,candidate metadata: exact decision-time availability not verified
+train,codex,codex_old,result_logged_tool_metadata,multiple_tool_calls,416,tool metadata masked: may appear at result time
+train,codex,codex_old,result_logged_tool_metadata,single_tool_call,7259,tool metadata masked: may appear at result time
+val,claude,claude,source_round_tool_metadata,multiple_tool_calls,1305,candidate metadata: exact decision-time availability not verified
+val,claude,claude,source_round_tool_metadata,single_tool_call,9571,candidate metadata: exact decision-time availability not verified
+val,codex,codex,source_round_tool_metadata,multiple_tool_calls,3420,candidate metadata: exact decision-time availability not verified
+val,codex,codex,source_round_tool_metadata,single_tool_call,10065,candidate metadata: exact decision-time availability not verified
+val,codex,codex_old,result_logged_tool_metadata,single_tool_call,577,tool metadata masked: may appear at result time
