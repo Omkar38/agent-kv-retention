@@ -247,51 +247,87 @@ def fig_simulator() -> None:
         return
     d = pd.read_csv(path)
 
-    # Four series, the cap at which this palette validates all-pairs.
-    chosen = [
+    # Two measures of very different scale -- an 8x gap and a 1-2% ordering --
+    # so they get two panels rather than one log axis that hides the smaller.
+    d = d[d.budget_tokens == 600_000]
+    loads = sorted(d.replicas.unique())
+
+    def series(policy: str, signal: str = "none") -> pd.DataFrame:
+        return d[(d.policy == policy) & (d.signal == signal)].sort_values("replicas")
+
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(12.2, 4.6))
+
+    # -- Panel A: the gap that matters
+    for policy, label, color in [
         ("immediate_evict", "immediate evict", SERIES[1]),
-        ("always_retain_lru", "always retain + LRU", SERIES[3]),
-        ("break_even_ttl", "break-even TTL", SERIES[0]),
-        ("lambda_0.5", "λ = 0.5  (q90)", SERIES[2]),
+        ("always_retain_lru", "any retention policy", SERIES[0]),
+    ]:
+        s = series(policy)
+        ax_a.plot(s.replicas, s.mean_jct_s / 60.0, color=color, lw=2, marker="o", ms=6)
+        ax_a.annotate(
+            label, (s.replicas.iloc[-1], s.mean_jct_s.iloc[-1] / 60.0),
+            textcoords="offset points", xytext=(-8, 14 if policy == "immediate_evict" else -18),
+            ha="right", fontsize=9.5, color=color, fontweight="semibold",
+        )
+    ratio = float(series("immediate_evict").mean_jct_s.iloc[-1]) / float(
+        series("always_retain_lru").mean_jct_s.iloc[-1]
+    )
+    ax_a.set_xlabel("offered load  (× trace concurrency)")
+    ax_a.set_ylabel("mean job completion time  (minutes)")
+    ax_a.set_title(f"Evicting on decode-end costs {ratio:.1f}×", loc="left")
+    ax_a.set_xticks(loads)
+    ax_a.margins(x=0.18, y=0.22)
+
+    # -- Panel B: the ordering among retention policies, as a ratio so it is visible
+    baseline = series("always_retain_lru").set_index("replicas").mean_jct_s
+    contenders = [
+        ("break_even_ttl", "none", "break-even TTL", SERIES[0]),
+        ("lambda_0.5", "hgb_q90", "λ = 0.5 (q90)", SERIES[2]),
+        ("clairvoyant_per_pause", "none", "clairvoyant (per-pause)", SERIES[3]),
+        ("continuum_style", "none", "Continuum-style", SERIES[1]),
     ]
+    # Several policies land within ~2% of each other, so end labels would
+    # overlap. Draw first, then lay the labels out with a minimum vertical
+    # separation, keeping their original order.
+    ends = []
+    for policy, signal, label, color in contenders:
+        s = series(policy, signal)
+        rel = (s.set_index("replicas").mean_jct_s / baseline) * 100.0
+        ax_b.plot(rel.index, rel.to_numpy(), color=color, lw=2, marker="o", ms=5)
+        ends.append([float(rel.to_numpy()[-1]), label, color])
 
-    budgets = sorted(d.budget_tokens.unique())
-    fig, axes = plt.subplots(1, len(budgets), figsize=(5.0 * len(budgets), 4.4), sharey=True)
-    axes = np.atleast_1d(axes)
+    ends.sort(key=lambda e: e[0])
+    span = ax_b.get_ylim()[1] - ax_b.get_ylim()[0]
+    min_gap = span * 0.062
+    for i in range(1, len(ends)):
+        if ends[i][0] - ends[i - 1][0] < min_gap:
+            ends[i][0] = ends[i - 1][0] + min_gap
+    for y, label, color in ends:
+        ax_b.annotate(
+            label, (loads[-1], y),
+            textcoords="offset points", xytext=(9, 0), ha="left", va="center",
+            fontsize=8.5, color=color, fontweight="semibold",
+        )
 
-    for ax, budget in zip(axes, budgets):
-        for policy, label, color in chosen:
-            s = d[
-                (d.budget_tokens == budget)
-                & (d.policy == policy)
-                & (d.signal.isin(["none", "hgb_q90"]))
-            ].sort_values("replicas")
-            if s.empty:
-                continue
-            ax.plot(
-                s.replicas, s.mean_jct_s / 60.0,
-                color=color, lw=2, marker="o", ms=5, label=label,
-            )
-            # Direct label: identity never rests on colour alone.
-            ax.annotate(
-                label.split("  ")[0], (s.replicas.iloc[-1], s.mean_jct_s.iloc[-1] / 60.0),
-                textcoords="offset points", xytext=(6, 0), ha="left", va="center",
-                fontsize=8.5, color=color, fontweight="semibold",
-            )
-        ax.set_xlabel("offered load  (× trace concurrency)")
-        ax.set_title(f"{budget / 1e6:g}M-token KV pool", loc="left")
-        ax.set_yscale("log")
-        ax.set_xticks(sorted(d.replicas.unique()))
-        ax.margins(x=0.22)
-    axes[0].set_ylabel("mean job completion time  (minutes)")
+    ax_b.axhline(100.0, color=REFERENCE, lw=1.2, ls="--", zorder=0)
+    ax_b.text(
+        loads[0], 100.0, "always retain + LRU", fontsize=8.5, color=INK_2,
+        va="top", ha="left",
+        bbox=dict(facecolor=SURFACE, edgecolor="none", pad=1.5),
+    )
+    ax_b.set_xlabel("offered load  (× trace concurrency)")
+    ax_b.set_ylabel("JCT relative to always-retain  (%)")
+    ax_b.set_title("Among retention policies, no one beats just holding on", loc="left")
+    ax_b.set_xticks(loads)
+    ax_b.margins(x=0.42, y=0.18)
 
     fig.suptitle(
-        "Evicting on decode-end costs ~6.5×; the choice among retention policies costs 1–2%",
+        "The large win is not evicting on decode-end; choosing among retention policies is second-order",
         x=0.012, ha="left", fontsize=12.5, fontweight="semibold",
     )
     fig.text(
         0.012, 0.005,
-        "Log scale, c fixed. Load above 1× replicates the session population, so it describes a "
+        "600k-token pool, c fixed. Load above 1× replicates the session population, so it describes a "
         "hypothetical server at that concurrency rather than more evidence about the trace.",
         fontsize=8.5, color=INK_2,
     )

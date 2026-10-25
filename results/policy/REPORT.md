@@ -191,6 +191,36 @@ and re-prefill saturates the GPU. This is the channel through which retention
 policy reaches job completion time, and it is *not* the channel the per-pause
 cost model represents.
 
+### Under genuine load, voluntary eviction never pays
+
+`scarce.csv` — 600k-token pool, 8× replicated load (3,072 sessions),
+utilisation 0.638, oversized admissions 3.2%:
+
+| policy | mean JCT | vs always-retain |
+|---|---:|---:|
+| **always retain + LRU** | **72,538 s** | **1.00×** |
+| fixed TTL 36 s | 73,915 s | 1.02× |
+| clairvoyant (per-pause oracle) | 74,165 s | 1.02× |
+| break-even TTL | 74,941 s | 1.03× |
+| λ = 0.5 (q90) | 75,281 s | 1.04× |
+| Continuum-style | 92,114 s | 1.27× |
+| immediate eviction | 580,300 s | 8.00× |
+
+The ordering is identical at both budgets and all three load levels. Two
+things stand out:
+
+**Holding everything and letting LRU sort it out beats every TTL policy.**
+Voluntary eviction causes re-prefill, re-prefill is the serialised bottleneck,
+and LRU evicts only when genuinely forced to. A TTL that releases a cache
+"early" is spending the scarce resource to conserve the abundant one.
+
+**The per-pause clairvoyant loses to always-retain** (74,165 vs 72,538). This
+is not a bug: it is optimal for the modelled per-pause cost `C(τ,T)`, which
+charges occupancy continuously and assumes eviction is cheap at the margin.
+The simulator charges eviction its true systemic price. The gap between those
+two is precisely the thing the single-pause model cannot represent, and it
+means a policy can be per-pause-optimal and system-suboptimal at once.
+
 ### The one result that dwarfs everything else
 
 | policy | mean JCT, 600k budget, arrival scale 2000 |
@@ -198,9 +228,12 @@ cost model represents.
 | immediate eviction (current vLLM / SGLang) | 67,976 s |
 | every other policy | 8,525 – 10,560 s |
 
-**Evicting on decode-end is ~6.5× worse than any retention policy**, and it is
-insensitive to the memory budget because it never holds anything. Differences
-*among* retention policies are 1–2% by comparison.
+Across every valid configuration (budget ≥ 600k, three arrival scales),
+immediate eviction is **6.4× to 14.7× worse** than the alternatives — the low
+end against the weakest retention policy, the high end against the strongest.
+It is also insensitive to the memory budget, because it never holds anything
+for memory pressure to act on. Differences *among* retention policies are
+1–2% by comparison.
 
 That ordering is the practically important result of this project: the large
 win is available to anyone who stops treating "decoding finished" as "request

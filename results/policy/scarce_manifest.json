@@ -1,0 +1,29 @@
+{
+  "git_commit": "0f1a1f16389c422b18bf000bb0f0075cdc26bcf7",
+  "seed": 560,
+  "budgets": [
+    600000,
+    1200000
+  ],
+  "replicas": [
+    1,
+    4,
+    8
+  ],
+  "arrival_scale": 2000.0,
+  "lambdas": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "signals": [
+    "hgb_q50",
+    "hgb_q90"
+  ],
+  "runs": 84,
+  "elapsed_s": 952.2,
+  "python": "3.13.7",
+  "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+  "note": "Budgets below 600k excluded: single contexts exceed the pool. Replicated sessions raise offered load and describe a hypothetical server at N times this trace's concurrency, not additional evidence."
+}

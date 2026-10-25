@@ -141,10 +141,16 @@ across requests (3.5s → 209s); under `c` proportional it is **75.0s for every 
 TTL is a weak or a strong baseline, and whether prediction helps at all.
 
 **3. The large win is not the policy.** Immediate eviction — what vLLM and SGLang do today — is
-**~6.5× worse** than any retention policy and insensitive to the memory budget. Differences *among*
-retention policies are 1–2%.
+**6.4× to 14.7× worse** than any retention policy across every valid configuration, and insensitive
+to the memory budget because it never holds anything. Differences *among* retention policies are
+1–2% by comparison. Under genuine load, **`always_retain` + LRU wins outright** — beating even the
+per-pause clairvoyant oracle (72,538 s vs 74,165 s at 8× load). Voluntary eviction causes re-prefill,
+re-prefill is the serialised bottleneck, and LRU evicts only when actually forced to. A policy can be
+per-pause-optimal and system-suboptimal at the same time; that gap is exactly what the single-pause
+cost model cannot represent.
 
 ![policy comparison](results/figures/fig1_policy_comparison.png)
+![simulator](results/figures/fig4_simulator_load.png)
 
 ## Repository layout
 
