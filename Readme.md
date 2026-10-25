@@ -4,7 +4,11 @@
 
 How should an LLM serving system spend its GPU memory across many concurrent agent sessions that keep pausing for tool calls?
 
-> **Status (Week 7, Oct 2026):** Weeks 3–7 complete. Pause table, validated handoff dataset, duration prediction, and now the retention policies, discrete-event simulator, offline optimum, and the full prediction-quality sweep — see **[`results/policy/REPORT.md`](results/policy/REPORT.md)**. Cost-model constants (`B`, `c`) are **not** hardware-calibrated, so absolute GPU-seconds are not meaningful; every claim is a comparison between policies under one shared model. Nothing here measures GPU KV-cache residency: pauses remain trace-derived proxies.
+> **Status (Week 8, Oct 2026):** Weeks 3–8 complete. Pause table, validated handoff dataset, duration prediction, retention policies, discrete-event simulator, offline optimum, the full prediction-quality sweep, and a predictor retrained on the decision itself.
+>
+> 📄 **Full narrative report: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md)** ([PDF](docs/PROJECT_REPORT.pdf)) · technical results: [`results/policy/REPORT.md`](results/policy/REPORT.md)
+>
+> Cost-model constants (`B`, `c`) are **not** hardware-calibrated, so absolute GPU-seconds are not meaningful; every claim is a comparison between policies under one shared model. Nothing here measures GPU KV-cache residency: pauses remain trace-derived proxies.
 
 > **Canonical dataset:** `analysis/dataset/pause_handoff.parquet` — the Version 2 all-row categorized handoff (357,161 rows, 33 columns). Regenerate with `analysis/validation/build_pause_handoff.py`. See the [dataset guide](analysis/dataset/README.md). Do not use older filtered Parquet files.
 
@@ -131,9 +135,13 @@ prediction through one bit — is `T̂ ≥ b`. With a perfect prediction λ=0.1 
 clairvoyant optimum, versus 1.360 for the prediction-free break-even rule — a 23.8% cost reduction.
 With our actual q50 prediction it scores **1.717**, 26.2% *worse* than ignoring the prediction. Week 4 selected `hgb_q50` by
 log1p-MAE, which is dominated by the 95% of pauses that are short; on the bit the policy needs it has
-**22.3% recall**. Under-called long pauses outnumber correctly-called ones 3.5:1, so no λ can win.
-Switching to the recall-oriented `q90` lifts recall to 63.9% and, under `c` proportional, λ=0.5 beats
-the prediction-free baseline by 3.0% — the only configuration in the study where prediction pays.
+**22.3% recall**, and under-called long pauses outnumber correctly-called ones 3.5:1.
+
+**Retraining on the bit itself** (`src/classifier.py`, target `P(T ≥ b)`, with the acting threshold
+*derived* from the cost model rather than set to 0.5 — the measured asymmetry is **29:1**, giving
+`p* = 0.033`) lifts recall to **87.0%** and buys almost nothing, because precision falls to 14.6%.
+**Precision, not recall, is the binding constraint.** The best result in the whole study is a 3.0%
+gain, under `c` proportional, from `q90` — an upper quantile of a *duration* model.
 
 **2. Open decision #2 is settled by measurement.** Under `c` fixed the break-even time spans **622×**
 across requests (3.5s → 209s); under `c` proportional it is **75.0s for every request**, and
@@ -160,6 +168,7 @@ agent-kv-retention/
 │   ├── costs.py              # cost model; both c-fixed and c-proportional
 │   ├── policies.py           # the seven policies as interchangeable functions
 │   ├── sim.py                # discrete-event simulator, LRU, re-prefill queue
+│   ├── classifier.py         # P(T >= b) model + cost-derived acting threshold
 │   ├── predictor.py          # prediction loading and deliberate error injection
 │   ├── evaluate.py           # per-pause scoring, decomposition, bound probes
 │   └── data.py               # the one place predictions join the pause table
@@ -167,6 +176,7 @@ agent-kv-retention/
 │   ├── run_single_pause.py   # per-pause scoring + 19-condition error sweep
 │   ├── run_sweeps.py         # budget × concurrency grid
 │   ├── run_scarce.py         # the regime where memory actually binds
+│   ├── run_classifier.py     # retrain on the decision; compare all signals
 │   └── make_figures.py
 ├── tests/                    # policy, cost-model and simulator tests
 ├── analysis/
@@ -180,7 +190,10 @@ agent-kv-retention/
 │   ├── week4_extended/       # tail, calibration, threshold, bootstrap analyses
 │   ├── policy/               # REPORT.md + policy and simulator result tables
 │   └── figures/              # figures for the report and slides
-├── docs/                     # progress updates
+├── docs/
+│   ├── PROJECT_REPORT.md     # the full narrative report (Weeks 1–8)
+│   ├── PROJECT_REPORT.pdf    # same, typeset
+│   └── build_pdf.sh
 └── .github/workflows/        # CI for the Week 4 extended analysis
 ```
 
@@ -194,15 +207,19 @@ python3 -m pip install -r week4/requirements.txt
 bash week4/run_week4.sh
 bash week4/run_remaining.sh
 
-# Weeks 6–7 — policy, simulator, sweeps
+# Weeks 6–8 — policy, simulator, sweeps, decision classifier
 python3 -m experiments.run_single_pause
 python3 -m experiments.run_sweeps
 python3 -m experiments.run_scarce
+python3 -m experiments.run_classifier
 python3 -m experiments.make_figures
 
+# Report PDF (needs pandoc + tectonic)
+bash docs/build_pdf.sh
+
 # All tests
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 -m unittest discover -s week4/tests -p 'test_*.py'
+python3 -m unittest discover -s tests -p 'test_*.py'          # 26
+python3 -m unittest discover -s week4/tests -p 'test_*.py'    # 12
 ```
 
 **A reproducibility caveat worth knowing.** The Week 4 pipeline is deterministic on a given machine

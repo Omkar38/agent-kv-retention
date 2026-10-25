@@ -264,14 +264,91 @@ refinement on this workload.
 - **Replicated-session runs are synthetic load.** They say what would happen at
   higher concurrency; they are not evidence about this trace.
 
+## 8. Week 8 — retraining on the decision
+
+The obvious response to §2 is to stop predicting duration and predict the bit.
+`src/classifier.py` trains on `1[T >= b]` directly, with the same feature
+whitelist and the same session-level splits, so the comparison isolates the
+change of target.
+
+**The acting threshold is derived, not set to 0.5.** In normalised time
+`u = T/b` the cost is dimensionless, and calling a pause long is cheaper iff
+`p > p* = ΔS / (ΔS − ΔL)` where `ΔL = E[g_A − g_B | u ≥ 1]` and
+`ΔS = E[g_A − g_B | u < 1]`. Measured on training data (`c` fixed, λ = 0.5):
+
+    ΔL = −0.858    ΔS = +0.0295    →    p* = 0.033
+
+A **29:1 asymmetry**. Calling a pause long is worth it at a 3.3% chance of
+being right. That is the cost asymmetry of §2 expressed as a number.
+
+### It fixed the bit
+
+| Signal | Long-pause recall | Precision | Flip rate |
+|---|---:|---:|---:|
+| q50 (Week 4 selection) | 22.3% | 65.3% | 4.0% |
+| q90 | 63.9% | 21.5% | 12.2% |
+| classifier @ 0.5 | 38.0% | 42.7% | 5.1% |
+| **classifier @ p\* = 0.033** | **87.0%** | 14.6% | 23.6% |
+
+Recall nearly quadrupled, exactly as intended.
+
+### It did not fix the result
+
+| Signal | best λ | `c` fixed | vs baseline | `c` proportional | vs baseline |
+|---|---|---:|---:|---:|---:|
+| q50 | 0.75 | 1.3678 | −0.56% | 1.3281 | −1.27% |
+| q90 | 0.75 / 0.5 | 1.3702 | −0.73% | **1.2726** | **+2.96%** |
+| classifier @ 0.5 | 0.75 / 0.5 | **1.3627** | −0.18% | 1.2744 | +2.82% |
+| classifier @ validation-selected | 0.75 / 0.5 | 1.3747 | −1.06% | 1.2910 | +1.57% |
+| classifier @ p\* derived | 0.75 / 0.5 | 1.3747 | −1.06% | 1.3169 | −0.42% |
+
+The classifier beats q50 in both cost modes, which confirms the target was
+wrong. But it does not beat q90, and under `c` fixed nothing beats the
+prediction-free rule. **Precision is the binding constraint, not recall**: at
+87% recall the model calls ~27% of all pauses long when 4.5% are, and the
+false positives cost more than the recovered true positives save.
+
+### Two honest negatives
+
+**The analytical threshold over-corrects.** `p* = 0.033` is derived from the
+*marginal* distribution of `u`, but the decision-relevant conditional is the
+one for pauses the model is unsure about, which is not the population. The
+derivation gets the direction right — far below 0.5 — and the magnitude wrong.
+
+**The threshold does not transfer between session samples.** Selected on
+validation it is 0.04; the best value on test is about 0.20, and the two curves
+have *opposite* shapes. With 362 validation and 384 test sessions, and the
+decision driven by a few thousand long pauses, this knob is currently
+unreliable. Reported as selected-on-validation rather than tuned on test.
+
+**Calibration is good on average and bad where it matters.** Weighted error is
+0.016, but that is dominated by the 85% of pauses in the lowest bin. In the
+upper bins the model is badly overconfident — predicted 0.95 against observed
+0.58, predicted 0.83 against observed 0.55. Isotonic calibration on 362
+sessions cannot fix the tail. A single calibration number for a 4.5% base rate
+is misleading and we should stop quoting one.
+
+---
+
 ## What this changes for the remaining weeks
 
-1. **Retrain the predictor against the decision, not the distribution.** The
-   target should be `P(T ≥ b)` — a calibrated classifier on the bit the policy
-   reads — rather than a conditional median of duration. Week 4's model
-   selection by log1p-MAE optimised a quantity the policy never consumes.
-2. **Settle `c` before the hardware calibration run.** It determines whether a
-   fixed TTL is a strong or weak baseline, and whether prediction helps at all.
-3. **Lead with the eviction-on-decode-end result.** It is the largest, most
-   robust, and most actionable finding, and it does not depend on any of the
-   contested modelling choices.
+1. ~~Retrain the predictor against the decision~~ — **done (§8)**. It lifted
+   recall from 22.3% to 87.0% and bought almost nothing, because precision
+   fell to 14.6%. The target was wrong, but fixing it was not sufficient.
+2. **Attack precision.** Recall is solved; separating long from short pauses at
+   all is not. Untried decision-time features remain in the sanitised trace
+   (`command_skeleton`, `executables`, per-session recent latency history). If
+   precision cannot be raised, *that is the finding* — it answers the
+   Continuum vs. Choi & Joshi disagreement our gap statement is built on.
+3. **Calibrate `B` and `c` on hardware — now the critical path.** §1 shows the
+   `c_mode` choice flips the sign of the headline. Until it is measured, both
+   "prediction helps" and "prediction does not help" are supportable, which is
+   not a publishable state.
+4. **Replace the per-pause oracle with a system-level bound.** §7 shows it
+   losing to a trivial policy on the metric we report, so it is the wrong
+   denominator.
+5. **Lead with the eviction-on-decode-end result.** Largest, most robust, most
+   actionable, and independent of every contested modelling choice.
+
+A full narrative version of all of the above, including Weeks 1–5, is in
+[`docs/PROJECT_REPORT.md`](../../docs/PROJECT_REPORT.md) (and as a PDF).

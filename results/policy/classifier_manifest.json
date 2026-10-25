@@ -1,0 +1,28 @@
+{
+  "git_commit": "3beb719e5862bf0e708850bddb2ebb2acf54213c",
+  "seed": 560,
+  "n_train": 239053,
+  "n_test_scored": 47773,
+  "train_sessions": 2920,
+  "test_sessions": 384,
+  "features": [
+    "provider",
+    "model",
+    "tool_signature",
+    "feature_n_tools",
+    "feature_log1p_context_tokens",
+    "feature_log1p_round_index",
+    "feature_log1p_tool_input_chars",
+    "feature_has_tools",
+    "feature_multiple_tools"
+  ],
+  "lambdas": [
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "elapsed_s": 29.1,
+  "python": "3.13.7",
+  "platform": "macOS-26.5-arm64-arm-64bit-Mach-O"
+}
