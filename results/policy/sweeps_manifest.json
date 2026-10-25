@@ -1,0 +1,62 @@
+{
+  "git_commit": "c6562e6dc98a93e617666ec0f1868b4b16ed0c06",
+  "seed": 560,
+  "n_pauses": 47773,
+  "n_sessions": 384,
+  "budgets": [
+    150000,
+    300000,
+    600000,
+    1200000
+  ],
+  "arrival_scales": [
+    100.0,
+    500.0,
+    2000.0
+  ],
+  "lambdas": [
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1.0
+  ],
+  "signals": [
+    "hgb_q50",
+    "hgb_q90"
+  ],
+  "prediction_columns": {
+    "hgb_q50": "pred_hgb_q50_s",
+    "hgb_q90": "q90_s"
+  },
+  "runs": 384,
+  "elapsed_s": 1121.1,
+  "python": "3.13.7",
+  "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+  "cost_models": {
+    "fixed": {
+      "c_mode": "fixed",
+      "c0": 0.4,
+      "break_even_mean_s": 42.206878294224765,
+      "break_even_std_s": 36.04009453372622,
+      "break_even_spread_ratio": 622.6147592245154,
+      "break_even_p1_s": 3.4881900000000003,
+      "break_even_p25_s": 21.654,
+      "break_even_p50_s": 36.23225,
+      "break_even_p75_s": 49.311499999999995,
+      "break_even_p99_s": 209.1746699999999
+    },
+    "proportional": {
+      "c_mode": "proportional",
+      "c0": 0.4,
+      "break_even_mean_s": 75.0,
+      "break_even_std_s": 8.430465368337316e-15,
+      "break_even_spread_ratio": 1.0000000000000007,
+      "break_even_p1_s": 74.99999999999999,
+      "break_even_p25_s": 74.99999999999999,
+      "break_even_p50_s": 75.0,
+      "break_even_p75_s": 75.0,
+      "break_even_p99_s": 75.00000000000001
+    }
+  }
+}
