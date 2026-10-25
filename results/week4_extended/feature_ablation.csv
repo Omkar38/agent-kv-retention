@@ -1,0 +1,4 @@
+variant,features,validation_log1p_mae,test_log1p_mae,validation_mae_s,test_mae_s,fit_rows,test_rows,tool_metadata_included,context_timing_proven
+provider_model,"provider,model",0.7103997147694159,0.7367591994724032,19.478405632303843,16.810597563348882,80000,47773,False,False
+provider_model_turn,"provider,model,feature_log1p_round_index",0.6940874844534188,0.75505226946059,19.451856245989042,16.846765407722856,80000,47773,False,False
+provider_model_turn_context_provisional,"provider,model,feature_log1p_round_index,feature_log1p_context_tokens",0.6948544622698968,0.7603622027463433,19.454622279970952,16.852267494657323,80000,47773,False,False
