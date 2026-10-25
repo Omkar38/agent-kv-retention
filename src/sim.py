@@ -92,6 +92,11 @@ class Simulator:
         self.arrival_scale = arrival_scale
 
         self.sessions: dict[str, _Session] = {}
+        # Resident sessions only. Victim selection scans this rather than every
+        # session: a 600k-token pool holds a handful of 122k-token contexts, so
+        # this is O(10) instead of O(sessions) and keeps replicated-load runs
+        # tractable.
+        self.resident: dict[str, _Session] = {}
         self.used_tokens = 0.0
         self.gpu_free_at = 0.0  # prefill is serialised: one re-prefill at a time
         self._seq = 0
@@ -137,6 +142,7 @@ class Simulator:
             self.used_tokens -= s.context_tokens
             s.resident = False
             s.ttl_deadline = float("inf")
+            self.resident.pop(s.session_id, None)
 
     def _admit(self, s: _Session, tokens: float, now: float) -> None:
         """Make room for `tokens` by evicting idle caches, LRU first, then admit.
@@ -160,6 +166,7 @@ class Simulator:
             s.resident = True
             s.context_tokens = tokens
             self.used_tokens += tokens
+            self.resident[s.session_id] = s
         else:
             self.used_tokens += tokens - s.context_tokens
             s.context_tokens = tokens
@@ -167,8 +174,8 @@ class Simulator:
 
     def _lru_victim(self, exclude: str) -> _Session | None:
         best, best_t = None, float("inf")
-        for sid, s in self.sessions.items():
-            if sid == exclude or not s.resident:
+        for sid, s in self.resident.items():
+            if sid == exclude:
                 continue
             if s.last_used < best_t:
                 best, best_t = s, s.last_used

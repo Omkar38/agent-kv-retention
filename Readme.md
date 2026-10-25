@@ -4,7 +4,7 @@
 
 How should an LLM serving system spend its GPU memory across many concurrent agent sessions that keep pausing for tool calls?
 
-> **Status (Week 5, Oct 2026):** Weeks 3 and 4 are complete and merged here — pause table, validated handoff dataset, and duration prediction with error analysis. **No retention policy, simulator, or baseline comparison exists yet** (Week 6–7 work). Nothing in `results/` measures GPU KV-cache residency or latency; all of it is trace-derived prediction analysis. Cost-model constants (`B`, `c`) are **not** hardware-calibrated — every `B/c` threshold in the results is illustrative.
+> **Status (Week 7, Oct 2026):** Weeks 3–7 complete. Pause table, validated handoff dataset, duration prediction, and now the retention policies, discrete-event simulator, offline optimum, and the full prediction-quality sweep — see **[`results/policy/REPORT.md`](results/policy/REPORT.md)**. Cost-model constants (`B`, `c`) are **not** hardware-calibrated, so absolute GPU-seconds are not meaningful; every claim is a comparison between policies under one shared model. Nothing here measures GPU KV-cache residency: pauses remain trace-derived proxies.
 
 > **Canonical dataset:** `analysis/dataset/pause_handoff.parquet` — the Version 2 all-row categorized handoff (357,161 rows, 33 columns). Regenerate with `analysis/validation/build_pause_handoff.py`. See the [dataset guide](analysis/dataset/README.md). Do not use older filtered Parquet files.
 
@@ -55,10 +55,10 @@ Meanwhile [Choi & Joshi](https://arxiv.org/abs/2608.30830) and [ConServe](https:
 
 ## What we build
 
-- **Discrete-event simulator** — primary results engine, trace-driven, calibrated against hardware measurements *(not started)*
+- **Discrete-event simulator** — trace-driven, fixed KV budget, LRU eviction, serialised re-prefill *(done — `src/sim.py`; hardware calibration still outstanding)*
 - **Duration predictor** — quantile regression / GBM on tool identity, argument size, context length, turn index; outputs a distribution, not a point estimate *(done, Week 4)*
-- **Retention policy** — `τ = π(T̂, c, B, λ)`, where `λ` interpolates between trusting the prediction and the prediction-free break-even rule *(not started)*
-- **Offline optimum solver** — dynamic program over the trace with full hindsight, enabling empirical competitive ratios *(not started)*
+- **Retention policy** — `τ = π(T̂, c, B, λ)`, where `λ` interpolates between trusting the prediction and the prediction-free break-even rule *(done — `src/policies.py`)*
+- **Offline optimum** — per-pause clairvoyant oracle, the denominator of the empirical competitive ratio *(done; a true offline optimum over the coupled system is not computed)*
 - **Prototype** — vLLM / SGLang with LMCache for the offload tier (stretch goal; the simulator alone answers the research question)
 
 ### Policy convention
@@ -122,10 +122,47 @@ A significant improvement in log error does **not** prove a systems-level advant
 constraint. See `results/week4_extended/WEEK4_FINAL_REPORT.md` for tail, calibration, and threshold
 sensitivity, and `week4/REAL_TRACE_SUMMARY.md` for provenance caveats.
 
+### Weeks 6–7 — policy, simulator, prediction-quality sweep
+
+Full write-up in **[`results/policy/REPORT.md`](results/policy/REPORT.md)**. Three findings:
+
+**1. The signal is worth ~24%, and our predictor captures none of it.** The policy reads the
+prediction through one bit — is `T̂ ≥ b`. With a perfect prediction λ=0.1 scores 1.036 against the
+clairvoyant optimum, versus 1.360 for the prediction-free break-even rule — a 23.8% cost reduction.
+With our actual q50 prediction it scores **1.717**, 26.2% *worse* than ignoring the prediction. Week 4 selected `hgb_q50` by
+log1p-MAE, which is dominated by the 95% of pauses that are short; on the bit the policy needs it has
+**22.3% recall**. Under-called long pauses outnumber correctly-called ones 3.5:1, so no λ can win.
+Switching to the recall-oriented `q90` lifts recall to 63.9% and, under `c` proportional, λ=0.5 beats
+the prediction-free baseline by 3.0% — the only configuration in the study where prediction pays.
+
+**2. Open decision #2 is settled by measurement.** Under `c` fixed the break-even time spans **622×**
+across requests (3.5s → 209s); under `c` proportional it is **75.0s for every request**, and
+`fixed_ttl` is then literally the same policy as `break_even_ttl`. The choice decides whether a fixed
+TTL is a weak or a strong baseline, and whether prediction helps at all.
+
+**3. The large win is not the policy.** Immediate eviction — what vLLM and SGLang do today — is
+**~6.5× worse** than any retention policy and insensitive to the memory budget. Differences *among*
+retention policies are 1–2%.
+
+![policy comparison](results/figures/fig1_policy_comparison.png)
+
 ## Repository layout
 
 ```
 agent-kv-retention/
+├── src/
+│   ├── costs.py              # cost model; both c-fixed and c-proportional
+│   ├── policies.py           # the seven policies as interchangeable functions
+│   ├── sim.py                # discrete-event simulator, LRU, re-prefill queue
+│   ├── predictor.py          # prediction loading and deliberate error injection
+│   ├── evaluate.py           # per-pause scoring, decomposition, bound probes
+│   └── data.py               # the one place predictions join the pause table
+├── experiments/
+│   ├── run_single_pause.py   # per-pause scoring + 19-condition error sweep
+│   ├── run_sweeps.py         # budget × concurrency grid
+│   ├── run_scarce.py         # the regime where memory actually binds
+│   └── make_figures.py
+├── tests/                    # policy, cost-model and simulator tests
 ├── analysis/
 │   ├── dataset/              # pause_handoff.parquet — the canonical dataset
 │   ├── trace_facts/          # exploratory tool-latency and session statistics
@@ -134,32 +171,53 @@ agent-kv-retention/
 ├── week4/                    # duration prediction pipeline, extended analysis, tests
 ├── results/
 │   ├── week4_handoff/        # predictor metrics and calibration plots
-│   └── week4_extended/       # tail, calibration, threshold, bootstrap analyses
+│   ├── week4_extended/       # tail, calibration, threshold, bootstrap analyses
+│   ├── policy/               # REPORT.md + policy and simulator result tables
+│   └── figures/              # figures for the report and slides
 ├── docs/                     # progress updates
 └── .github/workflows/        # CI for the Week 4 extended analysis
 ```
-
-Not yet created: `src/sim/`, `src/policies/`, `src/predictor/`, `src/oracle/`, `experiments/`.
 
 ## Reproducibility
 
 Every experiment run writes its config file and the git commit hash into its results directory. Raw data stays out of git; summary CSVs and figures are committed. Predictor train/test splits are **by session**, never by individual pause — random splits leak later turns of a session into training.
 
 ```bash
+# Week 4 — duration prediction
 python3 -m pip install -r week4/requirements.txt
 bash week4/run_week4.sh
 bash week4/run_remaining.sh
-python3 -m unittest discover -s week4/tests -p 'test_*.py' -v
+
+# Weeks 6–7 — policy, simulator, sweeps
+python3 -m experiments.run_single_pause
+python3 -m experiments.run_sweeps
+python3 -m experiments.run_scarce
+python3 -m experiments.make_figures
+
+# All tests
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 -m unittest discover -s week4/tests -p 'test_*.py'
 ```
+
+**A reproducibility caveat worth knowing.** The Week 4 pipeline is deterministic on a given machine
+but not across machines: `hgb_q50` test log1p-MAE is 0.5441 as committed and 0.5450 when re-run on a
+different platform. That is `HistGradientBoostingRegressor` varying with library build, not a seeding
+bug. The drift is ~40× smaller than the bootstrap CI on the gain, so conclusions hold — but claims of
+bit-exact reproduction from seed + SHA256 alone are too strong.
 
 ## Open decisions
 
-These are blocking and were flagged in the literature notes. They need settling before the simulator is written.
-
-1. **Offload tier.** Our cost model is two-way (retain / evict); InferCept and Choi & Joshi are three-way (preserve / swap / discard). Either exclude offload explicitly and justify it, or extend to multi-slope ski rental.
-2. **Is `c` per-request?** We currently fix `c` and let `B` scale with context. If `c` is instead proportional to cache size, then `B/c` is identical for every request — which makes a fixed TTL a *strong* baseline and invalidates the argument that per-tool TTLs are blind to `B`.
-3. **`B/c` is uncalibrated.** Every threshold result is illustrative until hardware measurement lands.
-4. **Pause-level vs request-level statistics.** TraceLab's ~38 s median / ~44 min p99 describe *complete requests*, not individual tool pauses. Use pause-level numbers everywhere.
+1. **Offload tier.** *(open)* Our cost model is two-way (retain / evict); InferCept and Choi & Joshi
+   are three-way (preserve / swap / discard). Either exclude offload explicitly and justify it, or
+   extend to multi-slope ski rental. Excluding it makes current results the conservative case.
+2. **Is `c` per-request?** ***(settled by measurement — both modes implemented, both reported.)***
+   Under `c` fixed, `b` spans 622×; under `c` proportional, `b` is identical for every request and a
+   fixed TTL becomes a strong baseline. The two modes disagree about whether prediction helps, so
+   results are reported under both rather than one being assumed.
+3. **`B/c` is uncalibrated.** *(open — Week 9.)* Absolute GPU-seconds are not meaningful until
+   hardware measurement lands. All current claims are policy-vs-policy under one shared model.
+4. **Pause-level vs request-level statistics.** *(settled.)* TraceLab's ~38 s median / ~44 min p99
+   describe *complete requests*. Everything here uses pause-level numbers.
 
 ## Team
 

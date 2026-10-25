@@ -235,10 +235,15 @@ def fig_decomposition() -> None:
 
 
 def fig_simulator() -> None:
-    """Job completion time against memory budget, once sessions compete."""
-    path = RESULTS / "sweeps.csv"
+    """Job completion time against offered load, once sessions compete.
+
+    Budgets below 600k tokens are excluded: there, roughly half of admissions
+    have a context larger than the whole pool, so those runs measure an
+    undersized pool rather than a retention policy.
+    """
+    path = RESULTS / "scarce.csv"
     if not path.exists():
-        print("  (skipping fig4: sweeps.csv not present)")
+        print("  (skipping fig4: scarce.csv not present)")
         return
     d = pd.read_csv(path)
 
@@ -250,41 +255,48 @@ def fig_simulator() -> None:
         ("lambda_0.5", "λ = 0.5  (q90)", SERIES[2]),
     ]
 
-    scales = sorted(d.arrival_scale.unique())
-    fig, axes = plt.subplots(1, len(scales), figsize=(4.2 * len(scales), 4.3), sharey=True)
+    budgets = sorted(d.budget_tokens.unique())
+    fig, axes = plt.subplots(1, len(budgets), figsize=(5.0 * len(budgets), 4.4), sharey=True)
     axes = np.atleast_1d(axes)
 
-    for ax, scale in zip(axes, scales):
+    for ax, budget in zip(axes, budgets):
         for policy, label, color in chosen:
             s = d[
-                (d.c_mode == "fixed")
-                & (d.arrival_scale == scale)
+                (d.budget_tokens == budget)
                 & (d.policy == policy)
-                & ((d.signal == "none") | (d.signal == "hgb_q90"))
-            ].sort_values("budget_tokens")
+                & (d.signal.isin(["none", "hgb_q90"]))
+            ].sort_values("replicas")
             if s.empty:
                 continue
             ax.plot(
-                s.budget_tokens / 1e6, s.mean_jct_s / 60.0,
+                s.replicas, s.mean_jct_s / 60.0,
                 color=color, lw=2, marker="o", ms=5, label=label,
             )
-        ax.set_xlabel("KV budget  (million tokens)")
-        ax.set_title(f"arrival scale {scale:g}×", loc="left")
+            # Direct label: identity never rests on colour alone.
+            ax.annotate(
+                label.split("  ")[0], (s.replicas.iloc[-1], s.mean_jct_s.iloc[-1] / 60.0),
+                textcoords="offset points", xytext=(6, 0), ha="left", va="center",
+                fontsize=8.5, color=color, fontweight="semibold",
+            )
+        ax.set_xlabel("offered load  (× trace concurrency)")
+        ax.set_title(f"{budget / 1e6:g}M-token KV pool", loc="left")
         ax.set_yscale("log")
+        ax.set_xticks(sorted(d.replicas.unique()))
+        ax.margins(x=0.22)
     axes[0].set_ylabel("mean job completion time  (minutes)")
-    axes[-1].legend(loc="upper right")
 
     fig.suptitle(
-        "Under memory pressure the retention rule decides job completion time",
+        "Evicting on decode-end costs ~6.5×; the choice among retention policies costs 1–2%",
         x=0.012, ha="left", fontsize=12.5, fontweight="semibold",
     )
     fig.text(
         0.012, 0.005,
-        "Log scale. Arrival scale compresses recorded inter-session gaps to raise concurrency.",
+        "Log scale, c fixed. Load above 1× replicates the session population, so it describes a "
+        "hypothetical server at that concurrency rather than more evidence about the trace.",
         fontsize=8.5, color=INK_2,
     )
-    fig.tight_layout(rect=[0, 0.04, 1, 0.92])
-    fig.savefig(FIGURES / "fig4_simulator_budget.png", bbox_inches="tight")
+    fig.tight_layout(rect=[0, 0.045, 1, 0.92])
+    fig.savefig(FIGURES / "fig4_simulator_load.png", bbox_inches="tight")
     plt.close(fig)
 
 

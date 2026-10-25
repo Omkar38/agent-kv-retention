@@ -19,7 +19,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 ## Headline
 
-**The duration signal is worth about 26% of the achievable cost. Our predictor
+**The duration signal is worth about 24% of the achievable cost. Our predictor
 captures none of it, because it was selected for the wrong objective.**
 
 The policy reads the prediction through exactly one bit — whether the predicted
@@ -35,9 +35,9 @@ bit q50 has **22.3% recall**.
 | Prediction-free break-even TTL | 1.360 |
 | λ = 0.1 with our **actual** q50 prediction | 1.717 |
 
-Acting on a perfect prediction would cut cost 26% below the prediction-free
-rule. Acting on our prediction makes it 26% **worse**. The gap is a predictor
-problem, not a policy problem.
+Acting on a perfect prediction would cut cost **23.8%** below the
+prediction-free rule. Acting on our prediction makes it **26.2% worse**. The
+gap is a predictor problem, not a policy problem.
 
 ---
 
@@ -126,7 +126,7 @@ The proposal anticipated this outcome:
 > system has tested.
 
 The sharper version is that the signal **is** worth acting on — the oracle row
-proves 26% is available — but only a predictor built for the decision can
+proves 23.8% is available — but only a predictor built for the decision can
 collect it. That is a stronger and more useful finding than either "it works"
 or "it doesn't".
 
