@@ -1,2 +1,20 @@
-
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Raw traces and large local data — see week3/README.md to regenerate
+data/
+*.duckdb
+
+# Generated Week 4 artifacts: regenerate with week4/run_week4.sh.
+# Aggregate results and reports under results/ ARE committed; these are not.
+results/week4_handoff/predictions_*.csv
+results/week4_handoff/fitted_models.joblib
+results/week4_handoff/continuum_train_cdf_reference.csv.gz
+
+# Local editor/agent config
+.claude/
