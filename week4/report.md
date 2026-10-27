@@ -9,6 +9,14 @@
 
 This document is the **branch-level guide** to the folders, scripts, datasets, tests, results, and present conclusions. For the short numerical research summary, see [`results/week4_extended/WEEK4_FINAL_REPORT.md`](../results/week4_extended/WEEK4_FINAL_REPORT.md). For machine-readable statistics, use the CSV/JSON results referenced below.
 
+## October 27 correction — equal-session weighting and policy caveats
+
+**The earlier claim of a statistically significant general HGB advantage was too broad.** The original bootstrap resampled entire sessions, but calculated an **event-weighted gain**, so large sessions contributed proportionally more. A session bootstrap alone does *not* mean each session has equal weight. The revised analysis outputs both event-weighted and **equal-session-weighted** estimates, confidence intervals, and flags for whether the interval excludes zero. Based on the author's equal-session reanalysis, that gain is near zero and not statistically distinguishable from zero. Do not cite the earlier positive event-weighted interval as evidence of improvement for a typical session.
+
+The revised cost table adds **always-keep** and **always-evict** reference strategies, all still under the uncalibrated single-pause cost model. The predictor now exports training-only **P(T > B)** classifiers at six thresholds, as additional decision-facing signals; no λ-policy benefit is yet established. The tool-name-only feature ablation now separates tool identity from other tool/context metadata. An offline simulator export preserves all finite nonnegative tool-pause records, including zero-duration pauses.
+
+A command-first-word feature **has not** been introduced because raw command text and proof of its decision-time availability are absent from the 33-column handoff. Context and tool-input-size availability is likewise unresolved. These are explicit limitations, not completed fixes. The updated full analysis results must be regenerated with the current workflow before quoting its latest estimates.
+
 ## 1. Objective and what was accomplished
 
 The Week 4 question is **whether the duration of a tool-related agent pause can be predicted from information potentially available when retention begins**, and how prediction errors relate to the future GPU KV-cache keep/evict decision.
@@ -155,7 +163,7 @@ All values below are from held-out **test sessions** (`n = 47,773`), not synthet
 
 Relative to the provider/tool median, the selected HGB model improves **log1p-MAE by approximately 10.2%** and raw MAE by approximately **1.3%**. The improvement is stronger in log-duration error than in absolute seconds because very long waits heavily influence raw MAE.
 
-Session-paired bootstrap of **384 held-out sessions**, using 2,000 resamples, estimates a log1p-MAE gain of **0.0621** (positive favors HGB), with **95% percentile interval [0.0340, 0.0953]**. This supports a repeatable improvement in the evaluated trace population under session-level resampling; it is not a policy-regret theorem or proof of cross-workload generalization.
+Session-paired bootstrap of **384 held-out sessions**, using 2,000 resamples, estimates a log1p-MAE gain of **0.0621** (positive favors HGB), with **95% percentile interval [0.0340, 0.0953]**. This event-weighted interval does not establish a population-level improvement for an equally weighted typical session, nor a policy-regret theorem or proof of cross-workload generalization.
 
 ### 4.2 Heavy tail and differing workloads
 
@@ -210,7 +218,7 @@ Tool-related metadata appears valuable for this model/workload, but the comparis
 
 ## 5. Conclusions that are supported now
 
-1. **Agent pause durations are partially predictable on the held-out TraceLab-derived cohort.** The learned median model improves on global and provider/tool historical baselines, especially on the log-duration scale. The result survives paired session-level bootstrap uncertainty analysis.
+1. **Agent pause durations are partially predictable on the held-out TraceLab-derived cohort.** The learned median model improves on global and provider/tool historical baselines, especially on the log-duration scale. The event-weighted result survived paired session-level bootstrap uncertainty analysis, but an equal-session analysis does not support an unconditional significance claim.
 2. **Tool identity and related metadata contain useful predictive information in this dataset.** Restricted-feature models perform worse. Whether all such metadata is available online must still be validated against a concrete retention-decision timestamp.
 3. **Pause durations are strongly heavy-tailed.** A relatively small set of long pauses dominates total observed waiting time and absolute prediction error.
 4. **Quantile estimates are reasonably calibrated in aggregate but poorly cover extreme waits.** Future policies must consider conservative tail handling or distribution-shift failure.
