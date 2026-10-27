@@ -120,9 +120,9 @@ def make_threshold(test):
     for B in THRESHOLDS:
         actual_keep=y<=B
         near=(y>=.75*B)&(y<=1.25*B)
-        for name,col in MODELS.items():
-            p=test[col].to_numpy()
-            keep=p<=B
+        for name,col in list(MODELS.items())+[("always_keep",None),("always_evict",None)]:
+            p=test[col].to_numpy() if col is not None else None
+            keep=(p<=B) if p is not None else np.full(len(y), name=="always_keep")
             fk=keep&(~actual_keep)
             fe=(~keep)&actual_keep
             flip=fk|fe
@@ -137,7 +137,8 @@ def make_threshold(test):
                 total_flip_fraction=float(flip.mean()),
                 near_threshold_n=int(near.sum()),
                 near_threshold_flip_fraction=float(flip[near].mean()) if near.any() else np.nan,
-                toy_cost_over_oracle=float(C.sum()/opt.sum()) if opt.sum()>0 else np.nan))
+                toy_cost_over_oracle=float(C.sum()/opt.sum()) if opt.sum()>0 else np.nan,
+                total_normalized_cost=float(C.sum()),oracle_total_normalized_cost=float(opt.sum())))
     return pd.DataFrame(rows)
 
 def make_calibration(test):
@@ -160,7 +161,11 @@ def make_calibration(test):
     return pd.DataFrame(rows)
 
 def session_bootstrap(test,replicates=2000,seed=560):
-    """Paired cluster bootstrap, sampling sessions not individual pause records."""
+    """Both estimands: event-weighted (large sessions count more) and
+    equal-session-weighted (each session is one independent sampling unit).
+    Report both; a positive cluster bootstrap for the event average does NOT
+    establish statistical significance for the equal-session estimand.
+    """
     rng=np.random.default_rng(seed)
     out=[]
     for group,frame in [("all",test)]+list(test.groupby("provider")):
@@ -170,23 +175,31 @@ def session_bootstrap(test,replicates=2000,seed=560):
         f["mae_gain"]=abs(f[REF]-y)-abs(f[HGB]-y)
         f["log_gain"]=abs(np.log1p(f[REF])-np.log1p(y))-abs(np.log1p(f[HGB])-np.log1p(y))
         for B in [1.,10.]:
-            keep=y<=B
-            f[f"flip_gain_{int(B)}"]=((f[REF]<=B)!=keep).astype(int)-((f[HGB]<=B)!=keep).astype(int)
+            correct=y<=B
+            f[f"flip_gain_{int(B)}"]=((f[REF]<=B)!=correct).astype(int)-((f[HGB]<=B)!=correct).astype(int)
         ag=f.groupby("session_key").agg(n=("target_s","size"),mae=("mae_gain","sum"),
               log=("log_gain","sum"),f1=("flip_gain_1","sum"),f10=("flip_gain_10","sum"))
         arr=ag[["n","mae","log","f1","f10"]].to_numpy(dtype=float)
         idx=rng.integers(0,len(arr),size=(replicates,len(arr)))
-        sums=arr[idx].sum(axis=1)
+        event_sums=arr[idx].sum(axis=1)
+        # Average within each session FIRST, then bootstrap equal session units.
+        session_means=arr[:,1:]/arr[:,0,None]
+        sampled_sessions=session_means[idx]
+        equal_means=sampled_sessions.mean(axis=1)
         for i,metric in [(1,"mae_s_gain"),(2,"log1p_mae_gain"),
                          (3,"flip_1s_gain"),(4,"flip_10s_gain")]:
-            sample=sums[:,i]/sums[:,0]
-            lo,hi=np.quantile(sample,[.025,.975])
-            out.append(dict(provider=group,metric=metric,
-                observed_gain=float(arr[:,i].sum()/arr[:,0].sum()),
-                ci95_low=float(lo),ci95_high=float(hi),
-                fraction_bootstrap_gain_positive=float((sample>0).mean()),
-                sessions=len(ag),test_events=len(f),bootstrap_replicates=replicates))
+            for weighting,sample,point in [
+                ("event",event_sums[:,i]/event_sums[:,0],arr[:,i].sum()/arr[:,0].sum()),
+                ("equal_session",equal_means[:,i-1],session_means[:,i-1].mean())
+            ]:
+                lo,hi=np.quantile(sample,[.025,.975])
+                out.append(dict(provider=group,weighting=weighting,metric=metric,
+                    observed_gain=float(point),ci95_low=float(lo),ci95_high=float(hi),
+                    interval_excludes_zero=bool(lo>0 or hi<0),
+                    fraction_bootstrap_gain_positive=float((sample>0).mean()),
+                    sessions=len(ag),test_events=len(f),bootstrap_replicates=replicates))
     return pd.DataFrame(out)
+
 
 def ablations(cohort,test,max_train=80000,iterations=75,seed=560):
     """Drop potentially future-derived tool metadata; context remains provisional."""
@@ -197,10 +210,12 @@ def ablations(cohort,test,max_train=80000,iterations=75,seed=560):
       ("provider_model",[]),
       ("provider_model_turn",["feature_log1p_round_index"]),
       ("provider_model_turn_context_provisional",
-         ["feature_log1p_round_index","feature_log1p_context_tokens"])]
+         ["feature_log1p_round_index","feature_log1p_context_tokens"]),
+      ("provider_model_tool_name_only",[],["tool_signature"])]
     out=[]
-    for label,num in variants:
-        cats=["provider","model"]
+    for variant in variants:
+        label,num,*extra=variant
+        cats=["provider","model"]+(extra[0] if extra else [])
         transformers=[("cat",OneHotEncoder(handle_unknown="ignore",sparse_output=False),cats)]
         if num:
             transformers.append(("num",SimpleImputer(strategy="median",add_indicator=True),num))
@@ -217,7 +232,7 @@ def ablations(cohort,test,max_train=80000,iterations=75,seed=560):
             validation_log1p_mae=mv["log1p_mae"],test_log1p_mae=mt["log1p_mae"],
             validation_mae_s=mv["mae_s"],test_mae_s=mt["mae_s"],
             fit_rows=len(fit),test_rows=len(test),
-            tool_metadata_included=False,context_timing_proven=False))
+            tool_metadata_included=("tool_signature" in cats),context_timing_proven=False))
     return pd.DataFrame(out)
 
 def report(path,audit,elig,tail,threshold,calibration,boot,ablate,manifest):
@@ -225,7 +240,8 @@ def report(path,audit,elig,tail,threshold,calibration,boot,ablate,manifest):
     a=pick(tail,provider="all",group="all",model="provider_tool_median")
     b=pick(tail,provider="all",group="all",model="hgb_q50")
     q=pick(calibration,group_by="all")
-    bt=pick(boot,provider="all",metric="log1p_mae_gain")
+    bt=pick(boot,provider="all",weighting="event",metric="log1p_mae_gain")
+    bs=pick(boot,provider="all",weighting="equal_session",metric="log1p_mae_gain")
     zero=int(elig.loc[(elig.analysis_track=="tool_pause_prediction")&
                (elig.label_state=="zero"),"n"].sum())
     negative=int(elig.loc[(elig.analysis_track=="tool_pause_prediction")&
@@ -235,31 +251,32 @@ def report(path,audit,elig,tail,threshold,calibration,boot,ablate,manifest):
     lines=[
      "# Week 4 Final Research Report — Group 9","",
      "## Scope / provenance","",
-     f"- Canonical dataset: 357,161 records, 33 columns; supervised observations: {audit['supervised_rows']:,}; held-out test records: {manifest['test_events']:,}.",
+     f"- Canonical dataset: {manifest['dataset_rows']:,} records, {manifest['dataset_columns']} columns; supervised observations: {audit['supervised_rows']:,}; held-out test records: {manifest['test_events']:,}.",
      "- Model inputs exclude target, original cause, timing outcomes, session ID and analysis-track labels. Session IDs are for splitting and uncertainty estimates only.",
      "- Trace-derived tool pauses are proxies, not measured GPU KV-cache residency, and do not themselves establish latency improvements.","",
      "## Real-trace duration prediction","",
      f"- Test log1p-MAE: provider/tool median {a.log1p_mae:.4f}, HGB Q50 {b.log1p_mae:.4f}.",
      f"- Test MAE: provider/tool median {a.mae_s:.3f}s, HGB Q50 {b.mae_s:.3f}s.",
-     f"- Session-paired bootstrap gain in log1p-MAE (positive favors HGB): {bt.observed_gain:.4f}; 95% interval [{bt.ci95_low:.4f}, {bt.ci95_high:.4f}].",
-     "- Significant relative improvement in log error does not prove a systems-level advantage under a GPU memory constraint.","",
+     f"- Event-weighted session-cluster bootstrap gain in log1p-MAE: {bt.observed_gain:.4f}, 95% interval [{bt.ci95_low:.4f}, {bt.ci95_high:.4f}].",
+     f"- Equal-session-weighted bootstrap gain in log1p-MAE: {bs.observed_gain:.4f}, 95% interval [{bs.ci95_low:.4f}, {bs.ci95_high:.4f}].",
+     "- **Inference depends on the estimand:** large sessions dominate event-weighted results; do NOT label the model universally significantly better. Review the equal-session interval before making a significance claim.","",
      "## Eligibility and future-information restrictions","",
      f"- The supervised-track records with excluded target outcomes: zero={zero:,}, negative={negative:,}, missing/nonfinite={missing:,}. Zero-duration pauses are not automatically invalid; inspect their logging provenance.",
      "- Tool lists and counts may include interactions not known at the first pause; the original features are candidate signals, not formally certified online signals.",
-     "- Three minimal-feature ablations remove ALL tool metadata. The context-token feature remains provisionally timed, so even the context ablation is a sensitivity analysis.",
+     "- Restricted-feature ablations include a tool-name-only variant; candidate tool/context fields remain provisionally timed. Tool-name value is not verified as online observable.",
      "- The retrospective offline cohort selector cannot be used in the online policy. Older Codex and multi-tool timing ambiguity must remain disclosed.","",
      "## Tail, calibration, and decision sensitivity","",
      "- Tool durations are strongly heavy-tailed; see tail_error_analysis.csv for >10s, >60s, top decile, provider-specific error and underprediction.",
      f"- Held-out P10/P50/P90 empirical coverage: {q.coverage_p10:.1%} / {q.coverage_p50:.1%} / {q.coverage_p90:.1%}. Central 80% interval coverage: {q.central_80_coverage:.1%}.",
      "- Marginally calibrated quantiles need not be calibrated in the long tail or by tool; see calibration_by_group.csv.",
-     "- threshold_analysis.csv reports false-retain, false-evict, near-threshold flips and a two-action cost diagnostic at multiple illustrative B/c settings.",
+     "- threshold_analysis.csv includes immediate-evict and always-keep cost reference points alongside predictor decisions for six illustrative B/c values.",
      "- B/c settings are NOT calibrated, and these diagnostics are NOT the learning-augmented λ-policy, a Continuum-style TTL, or a consistency/robustness guarantee.","",
      "## Reproduction and Week 6 handoff","",
      f"- Dataset SHA256: {manifest['dataset_sha256']}",
      f"- Test prediction SHA256: {manifest['prediction_sha256']}",
      f"- Seed {manifest['seed']}; resamples {manifest['bootstrap_replicates']}; training cap {manifest['max_train']}; boosting iterations {manifest['iterations']}.",
      "- Keep local test predictions and the train-only duration/CDF reference for the later matched-trace, matched-capacity Continuum experiment.",
-     "- Week 6 establishes a simplified single-request consistency/robustness theorem; load-sensitive multi-request behavior is a simulation extension.",
+     "- Week 6 aims to develop and prove a simplified single-request consistency/robustness guarantee; the result is not yet established. Multi-request load-dependent costs belong to simulation.",
      "- Remaining work is future policy development and workload calibration, not an assertion that the current predictor is already an optimal KV retention policy.",""
     ]
     path.write_text("\n".join(lines))
