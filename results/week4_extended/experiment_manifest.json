@@ -1,6 +1,6 @@
 {
   "dataset_sha256": "2c0d0f2cd825073dce3f03392a3b30497cad4f209539262c35a4a4e02cbf1d5c",
-  "prediction_sha256": "170512f21a82c10860729718e7af4d092e0da954847f260a4f64483d4eba0570",
+  "prediction_sha256": "40eaa3c1c07ad1ddb1b1c89ac382be0cc01cb084292b7a14c51f499c967096cd",
   "dataset_rows": 357161,
   "dataset_columns": 33,
   "supervised_rows": 311764,
@@ -13,6 +13,6 @@
   "pandas": "3.1.0",
   "numpy": "2.4.6",
   "sklearn": "1.9.1",
-  "git_commit": "66a12eb3e65e8e6aa5636876279d33d13c3dc4b7",
+  "git_commit": "91fe9301840bd9ace188ddab42884af0df4e6c87",
   "caveat": "trace-derived idle proxy, uncalibrated B/c, provisional decision-time features"
 }
