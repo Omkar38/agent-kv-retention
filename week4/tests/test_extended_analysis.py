@@ -24,6 +24,8 @@ class ExtendedTests(unittest.TestCase):
     def test_threshold_error_decomposition(self):
         for r in make_threshold(self.test).itertuples():
             self.assertAlmostEqual(r.total_flip_fraction,r.false_retain_fraction+r.false_evict_fraction)
+        self.assertIn("always_keep", set(make_threshold(self.test).model))
+        self.assertIn("always_evict", set(make_threshold(self.test).model))
 
     def test_tail_subgroup_counts(self):
         a=make_tail(self.test)
@@ -36,12 +38,14 @@ class ExtendedTests(unittest.TestCase):
     def test_paired_session_bootstrap(self):
         a=session_bootstrap(self.test,100,560)
         self.assertIn("log1p_mae_gain",set(a.metric))
+        self.assertEqual(set(a.weighting),{"event","equal_session"})
         self.assertTrue(np.isfinite(a.ci95_low).all())
 
     def test_feature_ablation_excludes_tool_metadata(self):
         a=ablations(self.cohort,self.test,max_train=100,iterations=3)
-        self.assertEqual(len(a),3)
-        self.assertFalse(a.tool_metadata_included.any())
+        self.assertEqual(len(a),4)
+        self.assertEqual(a.loc[a.variant.eq('provider_model_tool_name_only'),'tool_metadata_included'].iloc[0],True)
+        self.assertEqual(int(a.tool_metadata_included.sum()),1)
 
     def test_event_alignment_rejects_corruption(self):
         import tempfile
