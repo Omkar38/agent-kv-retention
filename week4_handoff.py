@@ -14,14 +14,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
+from sklearn.metrics import brier_score_loss, roc_auc_score
 from sklearn.linear_model import Ridge
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 import joblib
 
-SOURCE = "https://github.com/Omkar38/agent-kv-retention/tree/Hangting_week3"
 CATEGORICAL = ["provider", "model", "tool_signature"]
 NUMERIC = ["feature_n_tools", "feature_log1p_context_tokens", "feature_log1p_round_index",
            "feature_log1p_tool_input_chars", "feature_has_tools", "feature_multiple_tools"]
@@ -60,17 +60,6 @@ def tool_signature(value):
     if len(tools) == 1:
         return tools[0]
     return "MULTI:" + "+".join(tools[:3]) + ("+MORE" if len(tools) > 3 else "")
-
-
-def load_handoff(path):
-    path = Path(path)
-    if not path.is_file():
-        raise FileNotFoundError(f"Dataset not found: {path}; check out {SOURCE} first")
-    try:
-        frame = pd.read_parquet(path)
-    except ImportError as exc:
-        raise RuntimeError("Install a Parquet engine: python -m pip install pyarrow") from exc
-    return prepare_handoff(frame, source=str(path.resolve()))
 
 
 def prepare_handoff(frame, source="provided_dataframe"):
@@ -207,6 +196,89 @@ def metrics(y, p, horizon):
             "threshold_diagnostic":decision(y,p,horizon)}
 
 
+
+CLASSIFIER_HORIZONS = (0.1, 0.3, 1.0, 3.0, 10.0, 60.0)
+
+
+def horizon_key(seconds):
+    """Stable CSV field suffix, e.g. 0.1 -> 0p1s."""
+    return f"{float(seconds):g}".replace(".", "p") + "s"
+
+
+def train_long_pause_classifiers(fit, val, test, *, seed, iters):
+    """Train P(T > B) from TRAIN only, never from validation/test labels.
+
+    Probabilities quantify one threshold each; they are not retention decisions
+    or a substitute for a cost-aware multi-step policy. Classifier features use
+    the same provisional decision-time whitelist as the regression models.
+    """
+    xfit, xval, xtest = inputs(fit), inputs(val), inputs(test)
+    result, models, prob_val, prob_test = {}, {}, {}, {}
+    for threshold in CLASSIFIER_HORIZONS:
+        key = horizon_key(threshold)
+        col = f"p_over_{key}"
+        labels = (fit.target_s.to_numpy(float) > threshold).astype(int)
+        if len(np.unique(labels)) == 1:
+            # Needed for small synthetic fixtures or rare-event thresholds.
+            prior = float(labels[0])
+            pval = np.full(len(val), prior, dtype=float)
+            ptest = np.full(len(test), prior, dtype=float)
+            models[col] = {"constant_train_probability": prior}
+        else:
+            prep = model("q0.5", seed, iters).named_steps["preprocess"]
+            clf = Pipeline([("preprocess", prep), ("estimator",
+                HistGradientBoostingClassifier(max_iter=iters,
+                    max_leaf_nodes=18, learning_rate=0.075,
+                    min_samples_leaf=25, l2_regularization=4,
+                    random_state=seed))])
+            clf.fit(xfit, labels)
+            pval = clf.predict_proba(xval)[:, 1]
+            ptest = clf.predict_proba(xtest)[:, 1]
+            models[col] = clf
+        prob_val[col], prob_test[col] = pval, ptest
+        validation = (val.target_s.to_numpy(float) > threshold).astype(int)
+        observed = (test.target_s.to_numpy(float) > threshold).astype(int)
+        def quality(y, p):
+            return {"count": int(len(y)), "positive_count": int(y.sum()),
+                    "observed_prevalence": float(y.mean()),
+                    "brier": float(brier_score_loss(y, p)),
+                    "auc": float(roc_auc_score(y, p)) if len(np.unique(y)) == 2 else None,
+                    "accuracy_at_probability_0p5": float(((p > 0.5) == y).mean())}
+        result[col] = {"threshold_s": threshold,
+                       "train_positive_prevalence": float(labels.mean()),
+                       "validation": quality(validation, pval),
+                       "test": quality(observed, ptest)}
+    return result, models, prob_val, prob_test
+
+
+def export_simulation_cohort(frame, dest):
+    """Preserve finite, nonnegative tool-pause records INCLUDING zero durations.
+
+    Labels and timing are offline simulator ground truth only. This selection
+    must never become an online policy input or a measured GPU cache interval.
+    """
+    pause = pd.to_numeric(frame["pause_s"], errors="coerce")
+    include = (frame.analysis_track == "tool_pause_prediction") & pause.notna() & np.isfinite(pause) & (pause >= 0)
+    sim = frame.loc[include].copy()
+    sim.insert(0, "source_row_index", sim.index.to_numpy(dtype="int64"))
+    sim.insert(1, "event_id", [f"source-{n}" for n in sim.source_row_index])
+    sim["session_key"] = sim.provider.astype(str) + "|" + sim.session_id.astype(str)
+    sim["ground_truth_pause_s"] = pd.to_numeric(sim.pause_s, errors="coerce")
+    sim["is_zero_duration"] = sim.ground_truth_pause_s.eq(0)
+    # Provisional online features and retrospective trace timings are separated
+    # by documentation. The latter may be used only to drive offline replay.
+    fields = ["source_row_index","event_id","provider","session_id","session_key",
+              "split","round_index","model","log_format","tool_topology",
+              "feature_category","ground_truth_pause_s","is_zero_duration",
+              "context_tokens","feature_n_tools","feature_log1p_context_tokens",
+              "feature_log1p_round_index","feature_log1p_tool_input_chars",
+              "pause_start_at","pause_end_at"]
+    fields = [field for field in fields if field in sim.columns]
+    sim[fields].to_csv(dest/"simulator_all_tool_pauses.csv.gz",
+                       index=False, compression="gzip")
+    return {"records": int(len(sim)), "zero_duration_records": int(sim.is_zero_duration.sum()),
+            "warning": "offline source-derived pause proxy; not observed GPU-resident idle time"}
+
 def train_and_evaluate(frame, outdir, *, source="input", seed=560, iters=75,
                        max_train=80000, horizon=1.0, synthetic=False):
     cohort, audit = prepare_handoff(frame,source)
@@ -225,6 +297,9 @@ def train_and_evaluate(frame, outdir, *, source="input", seed=560, iters=75,
         fitted[name]=m
         pred_val[name]=from_log(m.predict(xv))
         pred_test[name]=from_log(m.predict(xt))
+    classifier_summary, classifier_models, prob_val, prob_test = train_long_pause_classifiers(
+        fit, val, test, seed=seed, iters=iters)
+    sim_summary = export_simulation_cohort(frame, dest)
     yv=val.target_s.to_numpy(float); yt=test.target_s.to_numpy(float)
     valmet={n:metrics(yv,pred_val[n],horizon) for n in POINT}
     best=min(POINT,key=lambda n:valmet[n]["log1p_mae"])
@@ -249,11 +324,13 @@ def train_and_evaluate(frame, outdir, *, source="input", seed=560, iters=75,
     for name in POINT: export[f"pred_{name}_s"]=pred_test[name]
     export["pred_s"]=pred_test[best]
     export["q10_s"]=q10;export["q50_s"]=q50;export["q90_s"]=q90
+    for column, values in prob_test.items(): export[column] = values
     export.to_csv(dest/"predictions_test.csv",index=False)
     export_val=val[cols].copy()
     export_val.insert(0,"event_id",[f"source-{x}" for x in val.source_row_index])
     for name in POINT: export_val[f"pred_{name}_s"]=pred_val[name]
     export_val["pred_s"]=pred_val[best]
+    for column, values in prob_val.items(): export_val[column] = values
     export_val.to_csv(dest/"predictions_validation.csv",index=False)
     # Continuum-style per-tool empirical distributions must use training labels ONLY.
     train[["source_row_index","session_key","provider","session_id","tool_signature","target_s"]].to_csv(
@@ -280,11 +357,13 @@ def train_and_evaluate(frame, outdir, *, source="input", seed=560, iters=75,
                                          "p99":float(np.quantile(durations,.99))},
             "test_slowest_10pct_share_of_duration":float(np.sort(yt)[-max(1,int(np.ceil(.1*len(yt)))):].sum()/yt.sum()),
             "validation_metrics":valmet,"test_metrics":testmet,"quantile_calibration":qc,
+            "long_pause_classifiers":classifier_summary,"simulator_handoff":sim_summary,
             "diagnostic_horizon_sweep":{str(th):decision(yt,pred_test[best],th)
                                          for th in (0.1,1.,10.,60.)},
             "method_note":"Offline filtered tool-wait cohort; trace-derived pause, not GPU idle time. No test-target tuning. Cost ratios are simplified diagnostics, not end-to-end policy guarantees."}
     (dest/"metrics.json").write_text(json.dumps(result,indent=2,allow_nan=False)+"\n")
     joblib.dump(fitted,dest/"fitted_models.joblib")
+    joblib.dump(classifier_models,dest/"long_pause_classifiers.joblib")
     write_report(result,dest)
     make_plots(yt,pred_test[best],q10,q50,q90,dest)
     return result
