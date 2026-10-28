@@ -330,25 +330,113 @@ is misleading and we should stop quoting one.
 
 ---
 
+## 9. Week 8b — it was the features, not the dataset
+
+§8 left precision as the binding constraint and asked whether the duration
+signal simply is not there. It is there. The Week 4 feature set described the
+*current* tool call — who is calling, which tool, how big the arguments and
+context are — and never told the model what had already happened in the
+session. That omission was the whole problem.
+
+### The unused signal
+
+| | value |
+|---|---|
+| lag-1 autocorrelation of log1p(pause) within session | **0.396** |
+| P(long \| previous pause was long) | **37.5%** |
+| P(long \| previous pause was short) | 4.1% |
+| base rate | 6.1% |
+
+A pause following a long pause is **6.15× more likely** to be long. The
+information is present in the committed dataset, strictly observable at
+decision time (round *k*−1 has completed before round *k* pauses), and was
+never supplied. `src/features.py` builds it with an assertion that the first
+pause of every session carries no history, so a mis-specified shift fails
+loudly rather than silently leaking.
+
+### What it bought
+
+Average precision on the long-pause bit, held-out split:
+
+| feature set | AP (c fixed) | AP (c proportional) |
+|---|---:|---:|
+| Week 4 base | 0.3362 | 0.1747 |
+| **+ session history** | **0.5185** | **0.3419** |
+| + clock | 0.5201 | 0.3281 |
+| + user identity | 0.5161 | 0.3184 |
+
+Session-bootstrapped AP gain: **+0.1822, 95% CI [+0.0584, +0.2793]**
+(c fixed) and **+0.1672, [+0.0442, +0.2555]** (proportional). Precision at the
+operating threshold roughly doubles (0.160 → 0.318 fixed).
+
+Clock features and user identity add nothing once history is present — a
+useful negative, since `user` carried a 14× spread in long-pause rate on its
+own and would have been the riskiest feature to depend on.
+
+### The headline negative is reversed
+
+On the inherited 384-session split the realised-cost gain was +0.89% with a
+confidence interval straddling zero. That is a power problem: the cost metric
+is driven by the ~5% of pauses that are long, and **the inherited test split
+has a 4.50% long-pause rate against 6.47% in train** — it is unrepresentative
+on exactly the quantity the decision turns on.
+
+`experiments/run_feature_cv.py` removes the limitation with 5-fold
+cross-validation grouped by session, scoring all 3,667 sessions out-of-fold:
+
+| c_mode | break-even | Week 4 features | + history |
+|---|---:|---:|---:|
+| fixed | 1.4814 | 1.4539 | **1.4219** |
+| proportional | 1.4185 | 1.3918 | **1.3690** |
+
+| comparison | gain | 95% CI | significant |
+|---|---:|---|---|
+| history vs break-even (fixed) | +0.0595 | [+0.0161, +0.1033] | **yes** |
+| history vs break-even (proportional) | +0.0495 | [+0.0193, +0.0824] | **yes** |
+| history vs Week 4 (fixed) | +0.0320 | [−0.0037, +0.0658] | no (P=0.96) |
+
+**Prediction-aware retention now significantly beats the prediction-free rule
+under both cost models.** The result survives excluding the rows used to pick
+the operating threshold (fixed +0.0581, [+0.0135, +0.1048]; proportional
++0.0426, [+0.0052, +0.0721]).
+
+This supplements rather than replaces the inherited split, which stays
+canonical for every other result in the project.
+
+### What the dataset genuinely does limit
+
+Within identical (provider, tool, tool-count, input-size-decile) groups the
+p90/p10 duration ratio is still **67×**. Some spread is irreducible given
+anything knowable at decision time — the same `pytest` invocation really does
+take 2 s or 200 s depending on what changed. Session history helps because it
+proxies that hidden state, not because it removes it. So the honest summary is
+that the dataset imposes a real ceiling, and we were nowhere near it.
+
+---
+
 ## What this changes for the remaining weeks
 
-1. ~~Retrain the predictor against the decision~~ — **done (§8)**. It lifted
-   recall from 22.3% to 87.0% and bought almost nothing, because precision
-   fell to 14.6%. The target was wrong, but fixing it was not sufficient.
-2. **Attack precision.** Recall is solved; separating long from short pauses at
-   all is not. Untried decision-time features remain in the sanitised trace
-   (`command_skeleton`, `executables`, per-session recent latency history). If
-   precision cannot be raised, *that is the finding* — it answers the
-   Continuum vs. Choi & Joshi disagreement our gap statement is built on.
-3. **Calibrate `B` and `c` on hardware — now the critical path.** §1 shows the
-   `c_mode` choice flips the sign of the headline. Until it is measured, both
-   "prediction helps" and "prediction does not help" are supportable, which is
-   not a publishable state.
-4. **Replace the per-pause oracle with a system-level bound.** §7 shows it
-   losing to a trivial policy on the metric we report, so it is the wrong
-   denominator.
-5. **Lead with the eviction-on-decode-end result.** Largest, most robust, most
-   actionable, and independent of every contested modelling choice.
+1. ~~Retrain the predictor against the decision~~ — **done (§8)**. Lifted recall
+   22.3% → 87.0%, bought nothing, precision fell to 14.6%.
+2. ~~Attack precision~~ — **done (§9)**. Session history roughly doubles it,
+   and prediction-aware retention now significantly beats the prediction-free
+   rule under both cost models. This reverses the project's headline negative.
+3. **Calibrate `B` and `c` on hardware — the critical path.** §1 shows the
+   `c_mode` choice changes the size of the effect. The §9 result now holds in
+   *both* modes, which makes the conclusion far more robust than it was, but
+   absolute GPU-seconds still mean nothing until this lands.
+4. **Re-run the simulator with the history-driven predictor.** Every simulator
+   result above used the q50 or q90 signal. The §9 predictor is materially
+   better and has not been through the capacity-constrained path, where the
+   re-prefill bottleneck may change the ranking again.
+5. **Replace the per-pause oracle with a system-level bound.** §7 shows it
+   losing to a trivial policy on the metric we report.
+6. **Fix the split, or stop relying on a single one.** The inherited test fold
+   is unrepresentative on long-pause rate (4.50% vs 6.47% train). Either
+   re-draw it stratified on that quantity or report cross-validated numbers
+   throughout.
+7. **Lead with the eviction-on-decode-end result.** Still the largest effect
+   and independent of every contested modelling choice.
 
 A full narrative version of all of the above, including Weeks 1–5, is in
 [`docs/PROJECT_REPORT.md`](../../docs/PROJECT_REPORT.md) (and as a PDF).

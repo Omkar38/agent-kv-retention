@@ -1,0 +1,21 @@
+{
+  "git_commit": "f39d575f1d78a7153e78418b2e829ddf852402c7",
+  "seed": 560,
+  "folds": 5,
+  "bootstrap_resamples": 2000,
+  "feature_sets": [
+    "week4_base",
+    "plus_history"
+  ],
+  "lambdas": [
+    0.25,
+    0.5,
+    0.75
+  ],
+  "n_pauses": 311764,
+  "n_sessions": 3666,
+  "elapsed_s": 277.5,
+  "python": "3.13.7",
+  "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+  "note": "Cross-validated supplement to the inherited split, used only to resolve statistical power on the cost metric. The fixed train/val/test assignment remains canonical elsewhere."
+}

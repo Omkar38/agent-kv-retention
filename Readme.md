@@ -4,7 +4,7 @@
 
 How should an LLM serving system spend its GPU memory across many concurrent agent sessions that keep pausing for tool calls?
 
-> **Status (Week 8, Oct 2026):** Weeks 3–8 complete. Pause table, validated handoff dataset, duration prediction, retention policies, discrete-event simulator, offline optimum, the full prediction-quality sweep, and a predictor retrained on the decision itself.
+> **Status (Week 8, Oct 2026):** Weeks 3–8 complete. Pause table, validated handoff dataset, duration prediction, retention policies, discrete-event simulator, offline optimum, the full prediction-quality sweep, a predictor retrained on the decision itself, and the session-history features that make prediction-aware retention beat the prediction-free rule.
 >
 > 📄 **Full narrative report: [`docs/PROJECT_REPORT.md`](docs/PROJECT_REPORT.md)** ([PDF](docs/PROJECT_REPORT.pdf)) · technical results: [`results/policy/REPORT.md`](results/policy/REPORT.md)
 >
@@ -60,7 +60,7 @@ Meanwhile [Choi & Joshi](https://arxiv.org/abs/2608.30830) and [ConServe](https:
 ## What we build
 
 - **Discrete-event simulator** — trace-driven, fixed KV budget, LRU eviction, serialised re-prefill *(done — `src/sim.py`; hardware calibration still outstanding)*
-- **Duration predictor** — quantile regression / GBM on tool identity, argument size, context length, turn index; outputs a distribution, not a point estimate *(done, Week 4)*
+- **Duration predictor** — GBM on tool identity, argument size, context length, turn index, **and session history**; emits a distribution and a calibrated `P(T ≥ b)` *(done — `src/classifier.py`, `src/features.py`)*
 - **Retention policy** — `τ = π(T̂, c, B, λ)`, where `λ` interpolates between trusting the prediction and the prediction-free break-even rule *(done — `src/policies.py`)*
 - **Offline optimum** — per-pause clairvoyant oracle, the denominator of the empirical competitive ratio *(done; a true offline optimum over the coupled system is not computed)*
 - **Prototype** — vLLM / SGLang with LMCache for the offload tier (stretch goal; the simulator alone answers the research question)
@@ -137,11 +137,23 @@ With our actual q50 prediction it scores **1.717**, 26.2% *worse* than ignoring 
 log1p-MAE, which is dominated by the 95% of pauses that are short; on the bit the policy needs it has
 **22.3% recall**, and under-called long pauses outnumber correctly-called ones 3.5:1.
 
-**Retraining on the bit itself** (`src/classifier.py`, target `P(T ≥ b)`, with the acting threshold
-*derived* from the cost model rather than set to 0.5 — the measured asymmetry is **29:1**, giving
-`p* = 0.033`) lifts recall to **87.0%** and buys almost nothing, because precision falls to 14.6%.
-**Precision, not recall, is the binding constraint.** The best result in the whole study is a 3.0%
-gain, under `c` proportional, from `q90` — an upper quantile of a *duration* model.
+**Retraining on the bit itself** (`src/classifier.py`, target `P(T ≥ b)`, acting threshold *derived*
+from the cost model rather than set to 0.5 — measured asymmetry **29:1**, giving `p* = 0.033`) lifts
+recall to **87.0%** but drops precision to 14.6%, so it buys nothing. Precision was the binding
+constraint — and the fix was a missing feature, not a better model.
+
+**4. It was the features, not the dataset.** The Week 4 feature set described the current tool call
+and never told the model what had already happened in the session. Within a session, a long pause
+makes the next pause **6.15× more likely** to be long (37.5% vs a 6.1% base rate; lag-1
+autocorrelation 0.396). Adding session history (`src/features.py`) raises average precision from
+**0.336 → 0.519** and roughly doubles precision at the operating point. Cross-validated over all
+3,667 sessions, prediction-aware retention now **significantly beats the prediction-free rule in
+both cost models** (fixed +0.059, 95% CI [+0.016, +0.103]; proportional +0.050, [+0.019, +0.082]) —
+reversing finding #1. The single inherited test split could not see this: its long-pause rate is
+4.50% against 6.47% in train, so it is unrepresentative on exactly the quantity that matters.
+
+Some spread is genuinely irreducible — within identical (provider, tool, tool-count,
+input-size-decile) groups the p90/p10 duration ratio is still 67× — but we were nowhere near it.
 
 **2. Open decision #2 is settled by measurement.** Under `c` fixed the break-even time spans **622×**
 across requests (3.5s → 209s); under `c` proportional it is **75.0s for every request**, and
@@ -169,6 +181,7 @@ agent-kv-retention/
 │   ├── policies.py           # the seven policies as interchangeable functions
 │   ├── sim.py                # discrete-event simulator, LRU, re-prefill queue
 │   ├── classifier.py         # P(T >= b) model + cost-derived acting threshold
+│   ├── features.py           # session-history features (leakage-asserted)
 │   ├── predictor.py          # prediction loading and deliberate error injection
 │   ├── evaluate.py           # per-pause scoring, decomposition, bound probes
 │   └── data.py               # the one place predictions join the pause table
@@ -177,6 +190,8 @@ agent-kv-retention/
 │   ├── run_sweeps.py         # budget × concurrency grid
 │   ├── run_scarce.py         # the regime where memory actually binds
 │   ├── run_classifier.py     # retrain on the decision; compare all signals
+│   ├── run_features.py       # feature ablation: what history is worth
+│   ├── run_feature_cv.py     # 5-fold session CV; resolves significance
 │   └── make_figures.py
 ├── tests/                    # policy, cost-model and simulator tests
 ├── analysis/
@@ -212,13 +227,15 @@ python3 -m experiments.run_single_pause
 python3 -m experiments.run_sweeps
 python3 -m experiments.run_scarce
 python3 -m experiments.run_classifier
+python3 -m experiments.run_features
+python3 -m experiments.run_feature_cv
 python3 -m experiments.make_figures
 
 # Report PDF (needs pandoc + tectonic)
 bash docs/build_pdf.sh
 
 # All tests
-python3 -m unittest discover -s tests -p 'test_*.py'          # 26
+python3 -m unittest discover -s tests -p 'test_*.py'          # 40
 python3 -m unittest discover -s week4/tests -p 'test_*.py'    # 12
 ```
 
