@@ -1,2 +1,5 @@
-
 .DS_Store
+
+# Generated Week 6 data, models, and simulation outputs
+/results/week6_inputs/
+/results/week6_simulation/

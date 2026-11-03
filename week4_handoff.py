@@ -395,7 +395,7 @@ def write_report(r, dest):
               "The data are trace-derived pause estimates, not GPU-resident cache inactivity measurements.",
               "The simplified threshold diagnostic is neither the new λ-policy nor the Continuum algorithm.",
               "Predictions and train-only empirical-CDF reference records are exported for later matched-trace policy comparisons."]
-    (Path(dest)/"analysis.md").write_text("\n".join(lines)+"\n")
+    (Path(dest)/"analysis.md").write_text("\n".join(lines)+"\n", encoding="utf-8")
 
 
 def make_plots(y,p,q10,q50,q90,dest):
