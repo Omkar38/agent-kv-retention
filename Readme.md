@@ -212,6 +212,17 @@ agent-kv-retention/
 └── .github/workflows/        # CI for the Week 4 extended analysis
 ```
 
+## Week 9 — Measurement-driven cost sensitivity (new branch)
+
+The experimental Week 9 calibration workflow is documented in
+[docs/WEEK9_CALIBRATION.md](docs/WEEK9_CALIBRATION.md). It provides an optional
+CUDA prefill timing harness, a measured-throughput summary, and a break-even
+sensitivity grid across both occupancy-cost assumptions. **No GPU
+measurements have yet been collected in this branch.** Prefill measurements
+alone cannot identify the opportunity cost of GPU memory or validate modeled
+system-level latency gains. The dataset and previous policy results are
+unchanged.
+
 ## Reproducibility
 
 Every experiment run writes its config file and the git commit hash into its results directory. Raw data stays out of git; summary CSVs and figures are committed. Predictor train/test splits are **by session**, never by individual pause — random splits leak later turns of a session into training.
