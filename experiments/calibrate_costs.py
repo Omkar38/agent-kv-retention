@@ -38,6 +38,8 @@ def validate_measurements(frame: pd.DataFrame) -> pd.DataFrame:
     missing = set(REQUIRED).difference(frame.columns)
     if missing:
         raise ValueError(f"Missing measurement columns: {sorted(missing)}")
+    if frame.empty:
+        raise ValueError("Measurements CSV is empty; provide actual benchmark runs")
     out = frame.copy()
     for name in REQUIRED:
         out[name] = pd.to_numeric(out[name], errors="coerce")
